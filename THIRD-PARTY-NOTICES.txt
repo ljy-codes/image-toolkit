@@ -1,0 +1,54 @@
+Image Toolkit Third-Party Notices
+=================================
+
+This product includes or depends on the following software:
+
+1. .NET 10
+   Copyright Microsoft Corporation.
+   License: MIT
+   https://github.com/dotnet/runtime/blob/main/LICENSE.TXT
+
+2. Magick.NET-Q8-x64 14.10.2
+   Copyright Dirk Lemstra and contributors.
+   License: Apache License 2.0
+   https://github.com/dlemstra/Magick.NET/blob/main/LICENSE
+
+3. CommunityToolkit.Mvvm 8.4.0
+   Copyright .NET Foundation and contributors.
+   License: MIT
+   https://github.com/CommunityToolkit/dotnet/blob/main/License.md
+
+4. Microsoft.Extensions.DependencyInjection 10.0.0
+   Copyright Microsoft Corporation.
+   License: MIT
+   https://github.com/dotnet/runtime/blob/main/LICENSE.TXT
+
+5. Microsoft.Extensions.Logging.Abstractions 10.0.0
+   Copyright Microsoft Corporation.
+   License: MIT
+   https://github.com/dotnet/runtime/blob/main/LICENSE.TXT
+
+6. xUnit.net 2.9.3 and xunit.runner.visualstudio 3.1.4
+   Copyright .NET Foundation and contributors.
+   License: Apache License 2.0
+   https://github.com/xunit/xunit/blob/main/LICENSE
+
+7. Microsoft.NET.Test.Sdk 17.14.1
+   Copyright Microsoft Corporation.
+   License: MIT
+   https://github.com/microsoft/vstest/blob/main/LICENSE
+
+8. coverlet.collector 6.0.4
+   Copyright Toni Solarin-Sodara and contributors.
+   License: MIT
+   https://github.com/coverlet-coverage/coverlet/blob/master/LICENSE
+
+9. Inno Setup 6
+   Copyright Jordan Russell and Martijn Laan.
+   License: Inno Setup License
+   https://jrsoftware.org/files/is/license.txt
+
+10. Inno Setup Chinese Simplified Translation (6.5.0+)
+    Copyright Zhenghan Yang (Kira).
+    License: MIT
+    https://github.com/kira-96/Inno-Setup-Chinese-Simplified-Translation
