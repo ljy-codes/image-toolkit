@@ -1,0 +1,14 @@
+bin/
+obj/
+.vs/
+.idea/
+*.user
+*.suo
+TestResults/
+artifacts/
+.worktrees/
+.dotnet-home/
+.nuget/
+*.tmp
+*.bak
+/测试图/
