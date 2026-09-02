@@ -88,7 +88,7 @@ public sealed class MagickImageProcessor : IImageProcessor
             encoded.UsedPngQuantization);
     }
 
-    private static void ApplyAspectRatio(
+    internal static void ApplyAspectRatio(
         MagickImage image,
         AspectRatioOptions options,
         BackgroundOptions background)
@@ -126,7 +126,7 @@ public sealed class MagickImageProcessor : IImageProcessor
             ResolveBackgroundColor(background));
     }
 
-    private static void ApplyResize(MagickImage image, ResizeOptions options)
+    internal static void ApplyResize(MagickImage image, ResizeOptions options)
     {
         var current = new PixelSize((int)image.Width, (int)image.Height);
         var target = MagickGeometryCalculator.CalculateResize(current, options);
