@@ -17,6 +17,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\ImageToolkit.Application\ImageToolkit.Application.csproj" />
     <ProjectReference Include="..\..\src\ImageToolkit.Domain\ImageToolkit.Domain.csproj" />
     <ProjectReference Include="..\..\src\ImageToolkit.Infrastructure\ImageToolkit.Infrastructure.csproj" />
   </ItemGroup>
