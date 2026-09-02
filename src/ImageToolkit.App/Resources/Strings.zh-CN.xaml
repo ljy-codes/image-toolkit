@@ -1,0 +1,13 @@
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:system="clr-namespace:System;assembly=System.Runtime">
+    <system:String x:Key="AppTitle">图批处理</system:String>
+    <system:String x:Key="AddFilesText">添加图片</system:String>
+    <system:String x:Key="AddFolderText">添加文件夹</system:String>
+    <system:String x:Key="StartText">开始处理</system:String>
+    <system:String x:Key="OriginalPreviewText">原图预览</system:String>
+    <system:String x:Key="ProcessedPreviewText">处理后预览</system:String>
+    <system:String x:Key="QueueText">处理队列</system:String>
+    <system:String x:Key="SettingsText">处理参数</system:String>
+</ResourceDictionary>
