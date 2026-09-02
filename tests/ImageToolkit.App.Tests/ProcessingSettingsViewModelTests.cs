@@ -37,4 +37,33 @@ public sealed class ProcessingSettingsViewModelTests
         Assert.Equal(900, request.Resize.Height);
         Assert.False(request.Resize.LockAspectRatio);
     }
+
+    [Fact]
+    public void Overwrite_mode_forces_original_format()
+    {
+        var viewModel = new ProcessingSettingsViewModel
+        {
+            OutputFormat = OutputImageFormat.Png
+        };
+
+        viewModel.OutputMode = OutputMode.OverwriteOriginal;
+
+        Assert.Equal(OutputImageFormat.Original, viewModel.OutputFormat);
+        Assert.NotNull(viewModel.Notice);
+    }
+
+    [Fact]
+    public void Transparent_background_leaves_overwrite_mode()
+    {
+        var viewModel = new ProcessingSettingsViewModel
+        {
+            OutputMode = OutputMode.OverwriteOriginal
+        };
+
+        viewModel.BackgroundMode = BackgroundMode.Transparent;
+
+        Assert.Equal(OutputMode.SourceDirectory, viewModel.OutputMode);
+        Assert.Equal(OutputImageFormat.Png, viewModel.OutputFormat);
+        Assert.NotNull(viewModel.Notice);
+    }
 }

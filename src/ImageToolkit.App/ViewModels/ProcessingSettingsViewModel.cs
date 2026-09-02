@@ -184,8 +184,28 @@ public sealed partial class ProcessingSettingsViewModel : ObservableObject
     partial void OnOutputFormatChanged(OutputImageFormat value) =>
         EnsureTransparentOutputCompatibility();
 
+    partial void OnOutputModeChanged(OutputMode value) =>
+        EnsureTransparentOutputCompatibility();
+
     private void EnsureTransparentOutputCompatibility()
     {
+        if (OutputMode == OutputMode.OverwriteOriginal &&
+            BackgroundMode == Domain.Enums.BackgroundMode.Transparent)
+        {
+            OutputMode = OutputMode.SourceDirectory;
+            OutputFormat = OutputImageFormat.Png;
+            Notice = "透明背景不能安全覆盖原格式，已切换为原目录新文件和 PNG。";
+            return;
+        }
+
+        if (OutputMode == OutputMode.OverwriteOriginal &&
+            OutputFormat != OutputImageFormat.Original)
+        {
+            OutputFormat = OutputImageFormat.Original;
+            Notice = "覆盖原文件时必须保持原格式。";
+            return;
+        }
+
         if (BackgroundMode == Domain.Enums.BackgroundMode.Transparent &&
             OutputFormat == OutputImageFormat.Jpeg)
         {

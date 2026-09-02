@@ -134,5 +134,21 @@ public sealed class ProcessingRequestValidator
         {
             errors.Add(new("output.directory-required", "请选择输出目录。"));
         }
+
+        if (request.Output.Mode == OutputMode.OverwriteOriginal &&
+            request.Output.Format != OutputImageFormat.Original)
+        {
+            errors.Add(new(
+                "output.overwrite-format",
+                "覆盖原文件时必须保持原格式。"));
+        }
+
+        if (request.Output.Mode == OutputMode.OverwriteOriginal &&
+            request.Background.Mode == BackgroundMode.Transparent)
+        {
+            errors.Add(new(
+                "output.overwrite-transparent",
+                "透明背景不能覆盖可能不支持透明通道的原格式。"));
+        }
     }
 }

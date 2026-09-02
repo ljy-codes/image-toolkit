@@ -14,16 +14,33 @@ public sealed class MagickPreviewRenderer : IImagePreviewRenderer
         ProcessingRequest request,
         int maximumWidth,
         int maximumHeight,
+        CancellationToken cancellationToken) =>
+        Task.Run(
+            () => Render(
+                sourcePath,
+                request,
+                maximumWidth,
+                maximumHeight,
+                cancellationToken),
+            cancellationToken);
+
+    private PreviewImage Render(
+        string sourcePath,
+        ProcessingRequest request,
+        int maximumWidth,
+        int maximumHeight,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         using var image = new MagickImage(sourcePath);
+        cancellationToken.ThrowIfCancellationRequested();
         _metadata.ApplyInputOrientation(image);
         MagickImageProcessor.ApplyAspectRatio(
             image,
             request.AspectRatio,
             request.Background);
         MagickImageProcessor.ApplyResize(image, request.Resize);
+        cancellationToken.ThrowIfCancellationRequested();
 
         var previewGeometry = new MagickGeometry(
             (uint)maximumWidth,
@@ -33,12 +50,13 @@ public sealed class MagickPreviewRenderer : IImagePreviewRenderer
             Greater = true
         };
         image.Resize(previewGeometry);
+        cancellationToken.ThrowIfCancellationRequested();
         image.Format = MagickFormat.Png;
         using var stream = new MemoryStream();
         image.Write(stream);
-        var result = new PreviewImage(
+        cancellationToken.ThrowIfCancellationRequested();
+        return new PreviewImage(
             stream.ToArray(),
             new PixelSize((int)image.Width, (int)image.Height));
-        return Task.FromResult(result);
     }
 }

@@ -89,6 +89,7 @@ public sealed class ImageProcessingPipeline
             ".png" => OutputImageFormat.Png,
             ".webp" => OutputImageFormat.Webp,
             ".bmp" => OutputImageFormat.Bmp,
+            ".tif" or ".tiff" => OutputImageFormat.Tiff,
             _ => OutputImageFormat.Jpeg
         };
 
@@ -107,6 +108,11 @@ public sealed class ImageProcessingPipeline
             OutputImageFormat.Png => ".png",
             OutputImageFormat.Webp => ".webp",
             OutputImageFormat.Bmp => ".bmp",
+            OutputImageFormat.Tiff => Path.GetExtension(sourcePath).Equals(
+                ".tiff",
+                StringComparison.OrdinalIgnoreCase)
+                ? ".tiff"
+                : ".tif",
             _ => Path.GetExtension(sourcePath)
         };
 

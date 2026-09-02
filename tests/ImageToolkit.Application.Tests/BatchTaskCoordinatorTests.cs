@@ -121,6 +121,37 @@ public sealed class BatchTaskCoordinatorTests
     }
 
     [Fact]
+    public async Task Reports_processing_and_cancelled_status_for_every_item()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var updates = new List<BatchItem>();
+        var coordinator = new BatchTaskCoordinator(async (item, _, token) =>
+        {
+            cancellation.Cancel();
+            await Task.Delay(Timeout.Infinite, token);
+            return ImageProcessingResult.Completed(item.SourcePath, item.SourcePath + ".out", 1);
+        });
+
+        await coordinator.RunAsync(
+            [BatchItem.Waiting("1.jpg"), BatchItem.Waiting("2.jpg")],
+            ProcessingRequest.Default,
+            1,
+            new InlineProgress<BatchItem>(updates.Add),
+            cancellation.Token);
+
+        Assert.Contains(
+            updates,
+            item => item.SourcePath == "1.jpg" &&
+                    item.Status == BatchItemStatus.Processing);
+        Assert.Equal(
+            ["1.jpg", "2.jpg"],
+            updates
+                .Where(item => item.Status == BatchItemStatus.Cancelled)
+                .Select(item => item.SourcePath)
+                .Order(StringComparer.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task Processing_uses_request_snapshot()
     {
         long observedTarget = 0;
@@ -176,5 +207,10 @@ public sealed class BatchTaskCoordinatorTests
 
         release.SetResult();
         await firstRun;
+    }
+
+    private sealed class InlineProgress<T>(Action<T> report) : IProgress<T>
+    {
+        public void Report(T value) => report(value);
     }
 }

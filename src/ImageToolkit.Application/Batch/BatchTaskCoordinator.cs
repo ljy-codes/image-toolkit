@@ -67,6 +67,8 @@ public sealed class BatchTaskCoordinator
         var requestSnapshot = CloneRequest(request);
         var concurrency = ResolveWorkerCount(workerCount);
         var results = new ConcurrentBag<ImageProcessingResult>();
+        var completedPaths = new ConcurrentDictionary<string, byte>(
+            StringComparer.OrdinalIgnoreCase);
         _pauseGate.Resume();
         _state = BatchRunState.Running;
 
@@ -92,11 +94,24 @@ public sealed class BatchTaskCoordinator
                     channel.Reader,
                     requestSnapshot,
                     results,
+                    completedPaths,
                     progress,
                     cancellationToken))
                 .ToArray();
 
             await Task.WhenAll(workers).ConfigureAwait(false);
+            if (cancellationToken.IsCancellationRequested)
+            {
+                foreach (var item in batchItems.Where(
+                             item => !completedPaths.ContainsKey(item.SourcePath)))
+                {
+                    var result = ImageProcessingResult.Cancelled(item.SourcePath);
+                    results.Add(result);
+                    completedPaths.TryAdd(item.SourcePath, 0);
+                    progress?.Report(ToBatchItem(item.SourcePath, result));
+                }
+            }
+
             var summary = BuildSummary(batchItems.Length, results, cancellationToken);
             _state = summary.State;
             return summary;
@@ -112,6 +127,7 @@ public sealed class BatchTaskCoordinator
         ChannelReader<BatchItem> reader,
         ProcessingRequest request,
         ConcurrentBag<ImageProcessingResult> results,
+        ConcurrentDictionary<string, byte> completedPaths,
         IProgress<BatchItem>? progress,
         CancellationToken cancellationToken)
     {
@@ -135,6 +151,7 @@ public sealed class BatchTaskCoordinator
                 continue;
             }
 
+            progress?.Report(item with { Status = BatchItemStatus.Processing });
             ImageProcessingResult result;
             try
             {
@@ -154,6 +171,7 @@ public sealed class BatchTaskCoordinator
             }
 
             results.Add(result);
+            completedPaths.TryAdd(item.SourcePath, 0);
             progress?.Report(ToBatchItem(item.SourcePath, result));
         }
     }

@@ -8,18 +8,26 @@ public sealed class MagickImageMetadataReader : IImageMetadataReader
 {
     public Task<ImageFileInfo> ReadAsync(
         string sourcePath,
+        CancellationToken cancellationToken) =>
+        Task.Run(
+            () => Read(sourcePath, cancellationToken),
+            cancellationToken);
+
+    private static ImageFileInfo Read(
+        string sourcePath,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         using var image = new MagickImage(sourcePath);
+        cancellationToken.ThrowIfCancellationRequested();
         image.AutoOrient();
         var file = new FileInfo(sourcePath);
-        return Task.FromResult(new ImageFileInfo(
+        return new ImageFileInfo(
             file.FullName,
             file.Name,
             file.Extension,
             file.Length,
             new PixelSize((int)image.Width, (int)image.Height),
-            image.HasAlpha));
+            image.HasAlpha);
     }
 }

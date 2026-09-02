@@ -10,6 +10,7 @@ namespace ImageToolkit.App.ViewModels;
 public sealed partial class PreviewViewModel : ObservableObject
 {
     private readonly BuildPreviewUseCase _buildPreview;
+    private long _requestVersion;
 
     public PreviewViewModel(BuildPreviewUseCase buildPreview)
     {
@@ -33,16 +34,25 @@ public sealed partial class PreviewViewModel : ObservableObject
         ProcessingRequest request,
         CancellationToken cancellationToken)
     {
+        var version = Interlocked.Increment(ref _requestVersion);
         IsLoading = true;
         try
         {
-            OriginalImage = LoadBitmap(sourcePath);
+            var original = await Task.Run(
+                () => LoadBitmap(sourcePath),
+                cancellationToken);
             var preview = await _buildPreview.ExecuteAsync(
                 sourcePath,
                 request,
                 1400,
                 1000,
                 cancellationToken);
+            if (version != Volatile.Read(ref _requestVersion))
+            {
+                return;
+            }
+
+            OriginalImage = original;
             ProcessedImage = LoadBitmap(preview.Bytes);
             Caption = $"{preview.Size.Width} × {preview.Size.Height}";
         }
@@ -51,16 +61,23 @@ public sealed partial class PreviewViewModel : ObservableObject
         }
         catch (Exception exception)
         {
-            Caption = $"预览失败：{exception.Message}";
+            if (version == Volatile.Read(ref _requestVersion))
+            {
+                Caption = $"预览失败：{exception.Message}";
+            }
         }
         finally
         {
-            IsLoading = false;
+            if (version == Volatile.Read(ref _requestVersion))
+            {
+                IsLoading = false;
+            }
         }
     }
 
     public void Clear()
     {
+        Interlocked.Increment(ref _requestVersion);
         OriginalImage = null;
         ProcessedImage = null;
         Caption = "选择队列中的图片以查看预览";

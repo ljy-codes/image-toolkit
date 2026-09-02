@@ -108,6 +108,7 @@
                     Grid.Column="3"
                     Style="{StaticResource IconButton}"
                     Command="{Binding RemoveSelectedCommand}"
+                    CommandParameter="{Binding SelectedItems, ElementName=FileList}"
                     Content="&#xE74D;"
                     ToolTip="移除选中图片" />
                 <Button
@@ -201,6 +202,7 @@
                     Grid.Row="1"
                     ItemsSource="{Binding FileQueue.Items}"
                     SelectedItem="{Binding FileQueue.SelectedItem}"
+                    SelectionChanged="OnQueueSelectionChanged"
                     SelectionMode="Extended">
                     <ListView.View>
                         <GridView AllowsColumnReorder="False">
@@ -217,7 +219,17 @@
                             <GridViewColumn Width="120" Header="尺寸" DisplayMemberBinding="{Binding Dimensions}" />
                             <GridViewColumn Width="90" Header="大小" DisplayMemberBinding="{Binding SizeText}" />
                             <GridViewColumn Width="90" Header="状态" DisplayMemberBinding="{Binding Status}" />
-                            <GridViewColumn Width="220" Header="输出">
+                            <GridViewColumn Width="190" Header="处理结果">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock
+                                            Text="{Binding ResultDetails, TargetNullValue=—}"
+                                            TextTrimming="CharacterEllipsis"
+                                            ToolTip="{Binding Message}" />
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                            <GridViewColumn Width="220" Header="输出路径">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
                                         <TextBlock
@@ -402,6 +414,7 @@
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <StackPanel Margin="0,0,18,0" VerticalAlignment="Center">
                     <Grid>
@@ -426,6 +439,11 @@
                     Content="取消" />
                 <Button
                     Grid.Column="3"
+                    Margin="0,0,8,0"
+                    Command="{Binding RetryFailedCommand}"
+                    Content="重试失败项" />
+                <Button
+                    Grid.Column="4"
                     Style="{StaticResource PrimaryButton}"
                     Command="{Binding StartCommand}"
                     Content="{DynamicResource StartText}" />

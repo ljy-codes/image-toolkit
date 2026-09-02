@@ -1,3 +1,5 @@
+using System.Collections;
+using System.Collections.Concurrent;
 using ImageToolkit.App.Models;
 using ImageToolkit.App.Services;
 using ImageToolkit.App.ViewModels;
@@ -28,7 +30,69 @@ public sealed class MainWindowViewModelTests
         Assert.True(viewModel.StartCommand.CanExecute(null));
     }
 
-    private static MainWindowViewModel CreateViewModel()
+    [Fact]
+    public void Remove_selected_removes_every_selected_queue_item()
+    {
+        var viewModel = CreateViewModel();
+        var first = CreateItem("one.jpg");
+        var second = CreateItem("two.jpg");
+        var third = CreateItem("three.jpg");
+        viewModel.FileQueue.Items.Add(first);
+        viewModel.FileQueue.Items.Add(second);
+        viewModel.FileQueue.Items.Add(third);
+
+        viewModel.RemoveSelectedCommand.Execute(new ArrayList { first, third });
+
+        Assert.Equal([second], viewModel.FileQueue.Items);
+    }
+
+    [Fact]
+    public async Task Retry_failed_processes_only_retryable_items()
+    {
+        var processor = new Processor();
+        var viewModel = CreateViewModel(processor);
+        var completed = CreateItem("completed.jpg");
+        completed.Status = "已完成";
+        var failed = CreateItem("failed.jpg");
+        failed.Status = "失败";
+        var unmet = CreateItem("unmet.jpg");
+        unmet.Status = "未达标";
+        viewModel.FileQueue.Items.Add(completed);
+        viewModel.FileQueue.Items.Add(failed);
+        viewModel.FileQueue.Items.Add(unmet);
+
+        await viewModel.RetryFailedCommand.ExecuteAsync(null);
+
+        Assert.Equal(
+            [failed.SourcePath, unmet.SourcePath],
+            processor.ProcessedPaths.Order(StringComparer.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task Closing_running_batch_waits_for_safe_cancellation()
+    {
+        var processor = new CancellableProcessor();
+        var viewModel = CreateViewModel(processor);
+        viewModel.FileQueue.Items.Add(CreateItem("running.jpg"));
+        var run = viewModel.StartCommand.ExecuteAsync(null);
+        await processor.Started.Task;
+
+        var canClose = await viewModel.PrepareCloseAsync();
+        await run;
+
+        Assert.True(canClose);
+        Assert.True(processor.CancellationObserved);
+        Assert.False(viewModel.IsRunning);
+    }
+
+    private static ImageQueueItemViewData CreateItem(string fileName) =>
+        new(
+            $@"C:\images\{fileName}",
+            fileName,
+            "800 × 600",
+            "100 KB");
+
+    private static MainWindowViewModel CreateViewModel(IImageProcessor? processor = null)
     {
         var previewUseCase = new BuildPreviewUseCase(new PreviewRenderer());
         return new MainWindowViewModel(
@@ -37,7 +101,7 @@ public sealed class MainWindowViewModelTests
             new ImageProcessingPipeline(
                 new ProcessingRequestValidator(),
                 new PathResolver(),
-                new Processor()),
+                processor ?? new Processor()),
             new ProcessingRequestValidator(),
             new Picker(),
             new Dialogs(),
@@ -76,12 +140,16 @@ public sealed class MainWindowViewModelTests
 
     private sealed class Processor : IImageProcessor
     {
+        public ConcurrentBag<string> ProcessedPaths { get; } = [];
+
         public Task<ImageProcessingResult> ProcessAsync(
             string sourcePath,
             string outputPath,
             ProcessingRequest request,
-            CancellationToken cancellationToken) =>
-            Task.FromResult(
+            CancellationToken cancellationToken)
+        {
+            ProcessedPaths.Add(sourcePath);
+            return Task.FromResult(
                 ImageProcessingResult.Completed(
                     sourcePath,
                     outputPath,
@@ -90,6 +158,35 @@ public sealed class MainWindowViewModelTests
                     90,
                     false,
                     false));
+        }
+    }
+
+    private sealed class CancellableProcessor : IImageProcessor
+    {
+        public TaskCompletionSource Started { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public bool CancellationObserved { get; private set; }
+
+        public async Task<ImageProcessingResult> ProcessAsync(
+            string sourcePath,
+            string outputPath,
+            ProcessingRequest request,
+            CancellationToken cancellationToken)
+        {
+            Started.SetResult();
+            try
+            {
+                await Task.Delay(Timeout.Infinite, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                CancellationObserved = true;
+                throw;
+            }
+
+            return ImageProcessingResult.Completed(sourcePath, outputPath, 1);
+        }
     }
 
     private sealed class PreviewRenderer : IImagePreviewRenderer

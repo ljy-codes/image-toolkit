@@ -28,12 +28,15 @@ public sealed class MagickImageProcessor : IImageProcessor
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
 
+        EnsureOverwriteIsSafe(sourcePath, request);
         using var image = new MagickImage(sourcePath);
         _metadata.ApplyInputOrientation(image);
         ApplyAspectRatio(image, request.AspectRatio, request.Background);
         ApplyResize(image, request.Resize);
 
-        var format = ResolveFormat(outputPath);
+        var format = request.Output.Format == OutputImageFormat.Original
+            ? ResolveFormat(outputPath)
+            : request.Output.Format;
         ResolveTransparency(image, format, request.Background);
         _metadata.ApplyOutputMetadata(image, request.Metadata);
         var encoded = await _encoder.EncodeAsync(
@@ -86,6 +89,24 @@ public sealed class MagickImageProcessor : IImageProcessor
             encoded.Quality,
             encoded.UsedAutomaticResize,
             encoded.UsedPngQuantization);
+    }
+
+    private static void EnsureOverwriteIsSafe(
+        string sourcePath,
+        ProcessingRequest request)
+    {
+        if (request.Output.Mode != OutputMode.OverwriteOriginal ||
+            ResolveFormat(sourcePath) != OutputImageFormat.Tiff)
+        {
+            return;
+        }
+
+        using var images = new MagickImageCollection(sourcePath);
+        if (images.Count > 1)
+        {
+            throw new InvalidOperationException(
+                "多页 TIFF 不支持覆盖原文件，请改用新文件输出。");
+        }
     }
 
     internal static void ApplyAspectRatio(
@@ -166,6 +187,7 @@ public sealed class MagickImageProcessor : IImageProcessor
             ".png" => OutputImageFormat.Png,
             ".webp" => OutputImageFormat.Webp,
             ".bmp" => OutputImageFormat.Bmp,
+            ".tif" or ".tiff" => OutputImageFormat.Tiff,
             _ => throw new NotSupportedException("不支持所选输出格式。")
         };
 

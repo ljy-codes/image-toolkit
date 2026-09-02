@@ -155,4 +155,41 @@ public sealed class ProcessingRequestValidatorTests
 
         Assert.Contains(result.Errors, error => error.Code == "output.directory-required");
     }
+
+    [Fact]
+    public void Rejects_format_conversion_when_overwriting_original()
+    {
+        var request = ProcessingRequest.Default with
+        {
+            Output = ProcessingRequest.Default.Output with
+            {
+                Mode = OutputMode.OverwriteOriginal,
+                Format = OutputImageFormat.Png
+            }
+        };
+
+        var result = _validator.Validate(request);
+
+        Assert.Contains(result.Errors, error => error.Code == "output.overwrite-format");
+    }
+
+    [Fact]
+    public void Rejects_transparent_background_when_overwriting_original()
+    {
+        var request = ProcessingRequest.Default with
+        {
+            Background = ProcessingRequest.Default.Background with
+            {
+                Mode = BackgroundMode.Transparent
+            },
+            Output = ProcessingRequest.Default.Output with
+            {
+                Mode = OutputMode.OverwriteOriginal
+            }
+        };
+
+        var result = _validator.Validate(request);
+
+        Assert.Contains(result.Errors, error => error.Code == "output.overwrite-transparent");
+    }
 }

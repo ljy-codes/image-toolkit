@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Controls;
 using ImageToolkit.App.ViewModels;
 
 namespace ImageToolkit.App;
@@ -8,6 +9,7 @@ namespace ImageToolkit.App;
 public partial class MainWindow : Window
 {
     private readonly MainWindowViewModel _viewModel;
+    private bool _closeApproved;
 
     public MainWindow(MainWindowViewModel viewModel)
     {
@@ -38,8 +40,23 @@ public partial class MainWindow : Window
             CancellationToken.None);
     }
 
-    private void OnWindowClosing(object? sender, CancelEventArgs e)
+    private void OnQueueSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        e.Cancel = !_viewModel.CanClose();
+        _viewModel.RemoveSelectedCommand.NotifyCanExecuteChanged();
+    }
+
+    private async void OnWindowClosing(object? sender, CancelEventArgs e)
+    {
+        if (_closeApproved || !_viewModel.IsRunning)
+        {
+            return;
+        }
+
+        e.Cancel = true;
+        if (await _viewModel.PrepareCloseAsync())
+        {
+            _closeApproved = true;
+            Close();
+        }
     }
 }

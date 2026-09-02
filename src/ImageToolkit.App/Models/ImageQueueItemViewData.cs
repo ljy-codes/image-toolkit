@@ -29,4 +29,10 @@ public sealed partial class ImageQueueItemViewData : ObservableObject
 
     [ObservableProperty]
     private string? _outputPath;
+
+    [ObservableProperty]
+    private string? _resultDetails;
+
+    [ObservableProperty]
+    private string? _message;
 }

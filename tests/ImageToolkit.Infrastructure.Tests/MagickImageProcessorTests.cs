@@ -116,6 +116,108 @@ public sealed class MagickImageProcessorTests : IDisposable
         Assert.Equal(300u, image.Height);
     }
 
+    [Fact]
+    public async Task Original_tiff_is_written_as_tiff()
+    {
+        Directory.CreateDirectory(_directory);
+        var source = Path.Combine(_directory, "source.tif");
+        using (var image = new MagickImage(MagickColors.CornflowerBlue, 320, 240))
+        {
+            image.Format = MagickFormat.Tiff;
+            image.Write(source);
+        }
+
+        var pipeline = new ImageProcessingPipeline(
+            new ProcessingRequestValidator(),
+            new OutputPathResolver(),
+            CreateProcessor());
+
+        var result = await pipeline.ProcessAsync(
+            source,
+            ProcessingRequest.Default,
+            CancellationToken.None);
+
+        Assert.Equal(".tif", Path.GetExtension(result.OutputPath));
+        using var output = new MagickImage(result.OutputPath!);
+        Assert.Equal(MagickFormat.Tiff, output.Format);
+    }
+
+    [Fact]
+    public async Task Multi_page_tiff_cannot_overwrite_original()
+    {
+        Directory.CreateDirectory(_directory);
+        var source = Path.Combine(_directory, "multi-page.tif");
+        using (var images = new MagickImageCollection())
+        {
+            images.Add(new MagickImage(MagickColors.CornflowerBlue, 320, 240));
+            images.Add(new MagickImage(MagickColors.OrangeRed, 320, 240));
+            images.Write(source);
+        }
+
+        var request = ProcessingRequest.Default with
+        {
+            Output = ProcessingRequest.Default.Output with
+            {
+                Mode = OutputMode.OverwriteOriginal
+            }
+        };
+        var processor = CreateProcessor();
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            processor.ProcessAsync(source, source, request, CancellationToken.None));
+
+        Assert.Equal("多页 TIFF 不支持覆盖原文件，请改用新文件输出。", exception.Message);
+        using var unchanged = new MagickImageCollection(source);
+        Assert.Equal(2, unchanged.Count);
+    }
+
+    [Fact]
+    public async Task Png_uses_lossless_output_before_optional_quantization()
+    {
+        using var image = new MagickImage(MagickColors.CornflowerBlue, 400, 300);
+        var request = ProcessingRequest.Default with
+        {
+            Compression = ProcessingRequest.Default.Compression with
+            {
+                AllowPngQuantization = true
+            }
+        };
+
+        var result = await new MagickCompressionEncoder().EncodeAsync(
+            image,
+            OutputImageFormat.Png,
+            request,
+            CancellationToken.None);
+
+        Assert.True(result.ReachedTarget);
+        Assert.False(result.UsedPngQuantization);
+    }
+
+    [Fact]
+    public async Task Png_automatically_resizes_when_target_remains_unmet()
+    {
+        using var image = new MagickImage(MagickColors.CornflowerBlue, 1600, 1200);
+        var request = ProcessingRequest.Default with
+        {
+            Compression = ProcessingRequest.Default.Compression with
+            {
+                TargetBytes = 1,
+                AllowPngQuantization = false
+            }
+        };
+
+        var result = await new MagickCompressionEncoder().EncodeAsync(
+            image,
+            OutputImageFormat.Png,
+            request,
+            CancellationToken.None);
+
+        Assert.False(result.ReachedTarget);
+        Assert.True(result.UsedAutomaticResize);
+        Assert.True(result.FinalSize.Width < 1600);
+        Assert.True(result.FinalSize.Height < 1200);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_directory))

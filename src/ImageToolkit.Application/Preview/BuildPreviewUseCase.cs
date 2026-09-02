@@ -25,19 +25,35 @@ public sealed class BuildPreviewUseCase : IDisposable
         lock (_sync)
         {
             _activeRequest?.Cancel();
-            _activeRequest?.Dispose();
             _activeRequest = CancellationTokenSource.CreateLinkedTokenSource(
                 cancellationToken);
             current = _activeRequest;
         }
 
-        await Task.Delay(200, current.Token).ConfigureAwait(false);
-        return await _renderer.RenderAsync(
-            sourcePath,
-            request,
-            maximumWidth,
-            maximumHeight,
-            current.Token).ConfigureAwait(false);
+        try
+        {
+            await Task.Delay(200, current.Token).ConfigureAwait(false);
+            var result = await _renderer.RenderAsync(
+                sourcePath,
+                request,
+                maximumWidth,
+                maximumHeight,
+                current.Token).ConfigureAwait(false);
+            current.Token.ThrowIfCancellationRequested();
+            return result;
+        }
+        finally
+        {
+            lock (_sync)
+            {
+                if (ReferenceEquals(_activeRequest, current))
+                {
+                    _activeRequest = null;
+                }
+            }
+
+            current.Dispose();
+        }
     }
 
     public void Dispose()
@@ -45,7 +61,6 @@ public sealed class BuildPreviewUseCase : IDisposable
         lock (_sync)
         {
             _activeRequest?.Cancel();
-            _activeRequest?.Dispose();
             _activeRequest = null;
         }
     }

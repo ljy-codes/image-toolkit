@@ -19,7 +19,7 @@ public sealed class MagickCompressionEncoder
 
         if (!request.Compression.Enabled)
         {
-            var bytes = Encode(transformed, format, 92, request.Compression.AllowPngQuantization);
+            var bytes = Encode(transformed, format, 92, false);
             return new EncodedImageData(
                 bytes,
                 CurrentSize(transformed),
@@ -112,19 +112,73 @@ public sealed class MagickCompressionEncoder
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var bytes = Encode(
-            transformed,
-            OutputImageFormat.Png,
-            null,
-            request.Compression.AllowPngQuantization);
-        var reached = bytes.LongLength <= request.Compression.TargetBytes;
+        var originalSize = CurrentSize(transformed);
+        var best = EncodePngCandidate(transformed, request, cancellationToken);
+        if (best.ReachedTarget ||
+            !CompressionSearchService.CanAutomaticallyResize(request))
+        {
+            return best;
+        }
+
+        foreach (var candidate in CompressionSearchService.BuildResizeCandidates(
+                     originalSize,
+                     request.Compression))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            using var resized = new MagickImage(transformed);
+            resized.Resize((uint)candidate.Width, (uint)candidate.Height);
+            best = EncodePngCandidate(resized, request, cancellationToken) with
+            {
+                FinalSize = candidate,
+                UsedAutomaticResize = true
+            };
+            if (best.ReachedTarget)
+            {
+                break;
+            }
+        }
+
+        return best;
+    }
+
+    private static EncodedImageData EncodePngCandidate(
+        MagickImage image,
+        ProcessingRequest request,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var lossless = Encode(image, OutputImageFormat.Png, null, false);
+        if (lossless.LongLength <= request.Compression.TargetBytes)
+        {
+            return new EncodedImageData(
+                lossless,
+                CurrentSize(image),
+                null,
+                true,
+                false,
+                false);
+        }
+
+        if (!request.Compression.AllowPngQuantization)
+        {
+            return new EncodedImageData(
+                lossless,
+                CurrentSize(image),
+                null,
+                false,
+                false,
+                false);
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        var quantized = Encode(image, OutputImageFormat.Png, null, true);
         return new EncodedImageData(
-            bytes,
-            CurrentSize(transformed),
+            quantized.LongLength < lossless.LongLength ? quantized : lossless,
+            CurrentSize(image),
             null,
-            reached,
+            quantized.LongLength <= request.Compression.TargetBytes,
             false,
-            request.Compression.AllowPngQuantization);
+            quantized.LongLength < lossless.LongLength);
     }
 
     private static EncodedImageData EncodeDirect(
@@ -177,6 +231,7 @@ public sealed class MagickCompressionEncoder
             OutputImageFormat.Png => MagickFormat.Png,
             OutputImageFormat.Webp => MagickFormat.WebP,
             OutputImageFormat.Bmp => MagickFormat.Bmp,
+            OutputImageFormat.Tiff => MagickFormat.Tiff,
             _ => throw new ArgumentOutOfRangeException(nameof(format))
         };
 

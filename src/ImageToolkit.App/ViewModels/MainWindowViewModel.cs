@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Specialized;
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -24,6 +25,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private BatchTaskCoordinator? _coordinator;
     private CancellationTokenSource? _batchCancellation;
     private CancellationTokenSource? _previewCancellation;
+    private Task? _activeBatchTask;
 
     public MainWindowViewModel(
         ImportImagesUseCase importImages,
@@ -83,10 +85,13 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     private bool CanEditQueue() => !IsRunning;
 
-    private bool CanRemoveSelected() =>
-        FileQueue.SelectedItem is not null && !IsRunning;
+    private bool CanRemoveSelected(IList? selectedItems) =>
+        selectedItems is { Count: > 0 } && !IsRunning;
 
     private bool CanPauseOrCancel() => IsRunning;
+
+    private bool CanRetryFailed() =>
+        !IsRunning && FileQueue.Items.Any(IsRetryable);
 
     [RelayCommand(CanExecute = nameof(CanEditQueue))]
     private async Task AddFilesAsync()
@@ -119,15 +124,21 @@ public sealed partial class MainWindowViewModel : ObservableObject
     }
 
     [RelayCommand(CanExecute = nameof(CanRemoveSelected))]
-    private void RemoveSelected()
+    private void RemoveSelected(IList? selectedItems)
     {
-        var selected = FileQueue.SelectedItem;
-        if (selected is null)
+        if (selectedItems is null)
         {
             return;
         }
 
-        FileQueue.Items.Remove(selected);
+        var itemsToRemove = selectedItems
+            .OfType<ImageQueueItemViewData>()
+            .ToArray();
+        foreach (var item in itemsToRemove)
+        {
+            FileQueue.Items.Remove(item);
+        }
+
         FileQueue.SelectedItem = FileQueue.Items.FirstOrDefault();
     }
 
@@ -141,8 +152,48 @@ public sealed partial class MainWindowViewModel : ObservableObject
     }
 
     [RelayCommand(CanExecute = nameof(CanStart))]
-    private async Task StartAsync()
+    private Task StartAsync() =>
+        RunTrackedBatchAsync(FileQueue.Items.ToArray());
+
+    [RelayCommand(CanExecute = nameof(CanRetryFailed))]
+    private Task RetryFailedAsync()
     {
+        var itemsToRetry = FileQueue.Items
+            .Where(IsRetryable)
+            .ToArray();
+        return RunTrackedBatchAsync(itemsToRetry);
+    }
+
+    private Task RunTrackedBatchAsync(
+        IReadOnlyList<ImageQueueItemViewData> itemsToRun)
+    {
+        var task = RunBatchAsync(itemsToRun);
+        _activeBatchTask = task;
+        return AwaitTrackedBatchAsync(task);
+    }
+
+    private async Task AwaitTrackedBatchAsync(Task task)
+    {
+        try
+        {
+            await task;
+        }
+        finally
+        {
+            if (ReferenceEquals(_activeBatchTask, task))
+            {
+                _activeBatchTask = null;
+            }
+        }
+    }
+
+    private async Task RunBatchAsync(IReadOnlyList<ImageQueueItemViewData> itemsToRun)
+    {
+        if (itemsToRun.Count == 0)
+        {
+            return;
+        }
+
         var request = Settings.BuildRequest();
         var validation = _validator.Validate(request);
         if (!validation.IsValid)
@@ -160,14 +211,14 @@ public sealed partial class MainWindowViewModel : ObservableObject
         IsRunning = true;
         IsPaused = false;
         _batchCancellation = new CancellationTokenSource();
-        Progress.Reset(FileQueue.Items.Count);
-        foreach (var item in FileQueue.Items)
+        Progress.Reset(itemsToRun.Count);
+        foreach (var item in itemsToRun)
         {
             item.Status = "等待";
             item.OutputPath = null;
         }
 
-        var lookup = FileQueue.Items.ToDictionary(
+        var lookup = itemsToRun.ToDictionary(
             item => item.SourcePath,
             StringComparer.OrdinalIgnoreCase);
         _coordinator = new BatchTaskCoordinator(
@@ -182,13 +233,20 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
             viewData.Status = ToChineseStatus(item.Status);
             viewData.OutputPath = item.Result?.OutputPath;
-            Progress.Advance();
+            viewData.ResultDetails = FormatResultDetails(item.Result);
+            viewData.Message = item.Result?.Message;
+            if (item.Status != BatchItemStatus.Processing)
+            {
+                Progress.Advance();
+            }
+
+            RetryFailedCommand.NotifyCanExecuteChanged();
         });
 
         try
         {
             var summary = await _coordinator.RunAsync(
-                FileQueue.Items.Select(item => BatchItem.Waiting(item.SourcePath)),
+                itemsToRun.Select(item => BatchItem.Waiting(item.SourcePath)),
                 request,
                 0,
                 progress,
@@ -242,21 +300,16 @@ public sealed partial class MainWindowViewModel : ObservableObject
         _batchCancellation?.Cancel();
     }
 
-    [RelayCommand]
-    private void RetryFailed()
-    {
-        foreach (var item in FileQueue.Items.Where(
-                     item => item.Status is "失败" or "未达标" or "已取消"))
-        {
-            item.Status = "等待";
-        }
-    }
-
     public async Task AddPathsAsync(
         IEnumerable<string> paths,
         bool includeSubdirectories,
         CancellationToken cancellationToken)
     {
+        if (IsRunning)
+        {
+            return;
+        }
+
         var result = await _importImages.ExecuteAsync(
             paths,
             includeSubdirectories,
@@ -298,7 +351,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         }
     }
 
-    public bool CanClose()
+    public async Task<bool> PrepareCloseAsync()
     {
         if (!IsRunning)
         {
@@ -311,6 +364,12 @@ public sealed partial class MainWindowViewModel : ObservableObject
         }
 
         _batchCancellation?.Cancel();
+        var activeBatch = _activeBatchTask;
+        if (activeBatch is not null)
+        {
+            await activeBatch;
+        }
+
         return true;
     }
 
@@ -321,7 +380,6 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     private void OnSelectedItemChanged(object? sender, EventArgs e)
     {
-        RemoveSelectedCommand.NotifyCanExecuteChanged();
         RefreshPreview();
     }
 
@@ -356,6 +414,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         AddFolderCommand.NotifyCanExecuteChanged();
         ChooseOutputFolderCommand.NotifyCanExecuteChanged();
         RemoveSelectedCommand.NotifyCanExecuteChanged();
+        RetryFailedCommand.NotifyCanExecuteChanged();
         ClearQueueCommand.NotifyCanExecuteChanged();
         PauseResumeCommand.NotifyCanExecuteChanged();
         CancelCommand.NotifyCanExecuteChanged();
@@ -371,6 +430,36 @@ public sealed partial class MainWindowViewModel : ObservableObject
             BatchItemStatus.Processing => "处理中",
             _ => "等待"
         };
+
+    private static bool IsRetryable(ImageQueueItemViewData item) =>
+        item.Status is "失败" or "未达标" or "已取消";
+
+    private static string? FormatResultDetails(ImageProcessingResult? result)
+    {
+        if (result is null)
+        {
+            return null;
+        }
+
+        var parts = new List<string>();
+        if (result.OutputSizeBytes > 0)
+        {
+            parts.Add(FormatFileSize(result.OutputSizeBytes));
+        }
+
+        if (result.FinalSize is not null)
+        {
+            parts.Add(
+                $"{result.FinalSize.Value.Width} × {result.FinalSize.Value.Height}");
+        }
+
+        if (result.Quality is not null)
+        {
+            parts.Add($"质量 {result.Quality}");
+        }
+
+        return parts.Count == 0 ? result.Message : string.Join(" · ", parts);
+    }
 
     private static string FormatFileSize(long bytes) =>
         bytes >= 1024 * 1024

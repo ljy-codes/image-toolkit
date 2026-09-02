@@ -6,5 +6,6 @@ public enum OutputImageFormat
     Jpeg,
     Png,
     Webp,
-    Bmp
+    Bmp,
+    Tiff
 }
