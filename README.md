@@ -11,9 +11,9 @@
 
 ## AI 抠图实测
 
-| 人像模型 | 商品 / 通用物体模型 |
-| --- | --- |
-| ![人像抠图实测](docs/images/ai-portrait-result.jpg) | ![通用物体抠图实测](docs/images/ai-general-result.jpg) |
+| 商品 / 通用物体模型 |
+| --- |
+| ![通用物体抠图实测](docs/images/ai-general-result.jpg) |
 
 以上图片来自真实 ONNX 推理验收，棋盘格区域表示透明背景。
 
