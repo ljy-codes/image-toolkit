@@ -22,9 +22,9 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="176" />
+            <ColumnDefinition Width="220" />
             <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="320" />
+            <ColumnDefinition Width="400" />
         </Grid.ColumnDefinitions>
 
         <Border
@@ -51,12 +51,42 @@
                         Text="本地图片工作台" />
                 </StackPanel>
 
-                <StackPanel Grid.Row="1" Margin="0,30,0,0">
-                    <TextBlock Margin="0,0,0,13" FontWeight="SemiBold" Text="文件" />
-                    <TextBlock Margin="0,0,0,13" Style="{StaticResource SecondaryText}" Text="尺寸与比例" />
-                    <TextBlock Margin="0,0,0,13" Style="{StaticResource SecondaryText}" Text="背景与压缩" />
-                    <TextBlock Margin="0,0,0,13" Style="{StaticResource SecondaryText}" Text="元数据" />
-                    <TextBlock Style="{StaticResource SecondaryText}" Text="输出" />
+                <Border
+                    Grid.Row="1"
+                    Margin="0,28,0,0"
+                    Padding="14"
+                    Background="{DynamicResource SurfaceBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="6">
+                    <StackPanel>
+                        <TextBlock
+                            FontSize="16"
+                            FontWeight="SemiBold"
+                            Text="{Binding FileQueue.Items.Count, StringFormat=队列 {0} 张}" />
+                        <TextBlock
+                            Margin="0,5,0,0"
+                            Style="{StaticResource SecondaryText}"
+                            Text="{Binding Progress.StatusText}"
+                            TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+
+                <StackPanel Grid.Row="2" Margin="0,24,0,0">
+                    <TextBlock Margin="0,0,0,10" FontWeight="SemiBold" Text="队列操作" />
+                    <Button
+                        Command="{Binding RemoveSelectedCommand}"
+                        CommandParameter="{Binding SelectedItems, ElementName=FileList}"
+                        Content="移除选中图片" />
+                    <Button
+                        Margin="0,8,0,0"
+                        Command="{Binding ClearQueueCommand}"
+                        Content="清空队列" />
+                    <TextBlock
+                        Margin="0,20,0,0"
+                        Style="{StaticResource SecondaryText}"
+                        Text="可将图片或文件夹直接拖入工作区。"
+                        TextWrapping="Wrap" />
                 </StackPanel>
 
                 <Border
@@ -67,7 +97,7 @@
                     BorderThickness="1"
                     CornerRadius="6">
                     <StackPanel>
-                        <TextBlock FontWeight="SemiBold" Text="{Binding FileQueue.Items.Count, StringFormat=队列 {0} 张}" />
+                        <TextBlock FontWeight="SemiBold" Text="支持格式" />
                         <TextBlock
                             Margin="0,4,0,0"
                             Style="{StaticResource SecondaryText}"
@@ -89,9 +119,6 @@
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="16" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
@@ -105,29 +132,31 @@
                     Margin="8,0,0,0"
                     Command="{Binding AddFolderCommand}"
                     Content="{DynamicResource AddFolderText}" />
-                <Button
-                    Grid.Column="3"
-                    Style="{StaticResource IconButton}"
-                    Command="{Binding RemoveSelectedCommand}"
-                    CommandParameter="{Binding SelectedItems, ElementName=FileList}"
-                    Content="&#xE74D;"
-                    ToolTip="移除选中图片" />
-                <Button
-                    Grid.Column="4"
-                    Margin="8,0,0,0"
-                    Style="{StaticResource IconButton}"
-                    Command="{Binding ClearQueueCommand}"
-                    Content="&#xE894;"
-                    ToolTip="清空队列" />
-                <Button
-                    Grid.Column="5"
-                    Margin="8,0,0,0"
-                    Command="{Binding StartNextBatchCommand}"
-                    Content="开启下一批" />
                 <CheckBox
-                    Grid.Column="7"
+                    Grid.Column="2"
+                    Margin="14,0,0,0"
                     IsChecked="{Binding IncludeSubdirectories}"
                     Content="包含子文件夹" />
+                <StackPanel
+                    Grid.Column="3"
+                    Margin="20,0"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center">
+                    <TextBlock
+                        HorizontalAlignment="Center"
+                        FontWeight="SemiBold"
+                        Text="{Binding WorkspaceTitle}" />
+                    <TextBlock
+                        Margin="0,2,0,0"
+                        HorizontalAlignment="Center"
+                        Style="{StaticResource SecondaryText}"
+                        Text="{Binding Progress.StatusText}" />
+                </StackPanel>
+                <TextBlock
+                    Grid.Column="4"
+                    HorizontalAlignment="Right"
+                    Style="{StaticResource SecondaryText}"
+                    Text="拖入图片或文件夹也可导入" />
             </Grid>
         </Border>
 
@@ -138,61 +167,87 @@
                 <RowDefinition Height="2*" MinHeight="210" />
             </Grid.RowDefinitions>
 
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="12" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <Border
-                    Grid.Column="0"
-                    Background="{DynamicResource SurfaceBrush}"
-                    BorderBrush="{DynamicResource BorderBrush}"
-                    BorderThickness="1"
-                    CornerRadius="6">
+            <TabControl>
+                <TabItem Header="处理后">
+                    <Border
+                        Background="{DynamicResource SurfaceBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="6">
+                        <Grid>
+                            <Image
+                                Margin="14,14,14,38"
+                                Source="{Binding Preview.ProcessedImage}"
+                                Stretch="Uniform"
+                                SnapsToDevicePixels="True" />
+                            <TextBlock
+                                Margin="14,0,14,10"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Bottom"
+                                Style="{StaticResource SecondaryText}"
+                                Text="{Binding Preview.Caption}"
+                                TextAlignment="Center"
+                                TextTrimming="CharacterEllipsis" />
+                        </Grid>
+                    </Border>
+                </TabItem>
+                <TabItem Header="左右对比">
                     <Grid>
-                        <TextBlock
-                            Margin="14,10"
-                            HorizontalAlignment="Left"
-                            VerticalAlignment="Top"
-                            FontWeight="SemiBold"
-                            Text="{DynamicResource OriginalPreviewText}" />
-                        <Image
-                            Margin="12,40,12,12"
-                            Source="{Binding Preview.OriginalImage}"
-                            Stretch="Uniform"
-                            SnapsToDevicePixels="True" />
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Border
+                            Background="{DynamicResource SurfaceBrush}"
+                            BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="6">
+                            <Grid>
+                                <TextBlock
+                                    Margin="14,10"
+                                    HorizontalAlignment="Left"
+                                    VerticalAlignment="Top"
+                                    FontWeight="SemiBold"
+                                    Text="{DynamicResource OriginalPreviewText}" />
+                                <Image
+                                    Margin="12,40,12,12"
+                                    Source="{Binding Preview.OriginalImage}"
+                                    Stretch="Uniform"
+                                    SnapsToDevicePixels="True" />
+                            </Grid>
+                        </Border>
+                        <Border
+                            Grid.Column="2"
+                            Background="{DynamicResource SurfaceBrush}"
+                            BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="6">
+                            <Grid>
+                                <TextBlock
+                                    Margin="14,10"
+                                    HorizontalAlignment="Left"
+                                    VerticalAlignment="Top"
+                                    FontWeight="SemiBold"
+                                    Text="{DynamicResource ProcessedPreviewText}" />
+                                <Image
+                                    Margin="12,40,12,34"
+                                    Source="{Binding Preview.ProcessedImage}"
+                                    Stretch="Uniform"
+                                    SnapsToDevicePixels="True" />
+                                <TextBlock
+                                    Margin="14,0,14,10"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Bottom"
+                                    Style="{StaticResource SecondaryText}"
+                                    Text="{Binding Preview.Caption}"
+                                    TextAlignment="Center"
+                                    TextTrimming="CharacterEllipsis" />
+                            </Grid>
+                        </Border>
                     </Grid>
-                </Border>
-                <Border
-                    Grid.Column="2"
-                    Background="{DynamicResource SurfaceBrush}"
-                    BorderBrush="{DynamicResource BorderBrush}"
-                    BorderThickness="1"
-                    CornerRadius="6">
-                    <Grid>
-                        <TextBlock
-                            Margin="14,10"
-                            HorizontalAlignment="Left"
-                            VerticalAlignment="Top"
-                            FontWeight="SemiBold"
-                            Text="{DynamicResource ProcessedPreviewText}" />
-                        <Image
-                            Margin="12,40,12,34"
-                            Source="{Binding Preview.ProcessedImage}"
-                            Stretch="Uniform"
-                            SnapsToDevicePixels="True" />
-                        <TextBlock
-                            Margin="14,0,14,10"
-                            HorizontalAlignment="Center"
-                            VerticalAlignment="Bottom"
-                            Style="{StaticResource SecondaryText}"
-                            Text="{Binding Preview.Caption}"
-                            TextAlignment="Center"
-                            TextTrimming="CharacterEllipsis" />
-                    </Grid>
-                </Border>
-            </Grid>
+                </TabItem>
+            </TabControl>
 
             <Grid Grid.Row="2">
                 <Grid.RowDefinitions>
@@ -257,14 +312,30 @@
             Background="{DynamicResource SurfaceBrush}"
             BorderBrush="{DynamicResource BorderBrush}"
             BorderThickness="1,0,0,0">
-            <ScrollViewer
-                Padding="18"
-                HorizontalScrollBarVisibility="Disabled"
-                VerticalScrollBarVisibility="Auto">
-                <StackPanel>
-                    <TextBlock Style="{StaticResource SectionHeader}" Text="{DynamicResource SettingsText}" />
+            <Grid Margin="18,16">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <TextBlock Style="{StaticResource SectionHeader}" Text="{DynamicResource SettingsText}" />
+                <TabControl Grid.Row="1">
+                    <TabControl.Style>
+                        <Style TargetType="TabControl" BasedOn="{StaticResource {x:Type TabControl}}">
+                            <Setter Property="IsEnabled" Value="True" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsRunning}" Value="True">
+                                    <Setter Property="IsEnabled" Value="False" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TabControl.Style>
 
-                    <Expander Header="参数方案" IsExpanded="True">
+                    <TabItem Header="参数方案">
+                        <ScrollViewer
+                            Padding="2,12,8,8"
+                            HorizontalScrollBarVisibility="Disabled"
+                            VerticalScrollBarVisibility="Auto">
+                            <GroupBox Header="参数方案">
                         <StackPanel Margin="0,10,0,0">
                             <TextBlock
                                 Margin="0,0,0,7"
@@ -290,10 +361,31 @@
                                 <Button Grid.Column="4" Command="{Binding Presets.RenameSelectedCommand}" Content="重命名" />
                                 <Button Grid.Column="6" Command="{Binding Presets.DeleteSelectedCommand}" Content="删除" />
                             </Grid>
-                            <TextBox
-                                Margin="0,8,0,0"
-                                Text="{Binding Presets.PresetName, UpdateSourceTrigger=PropertyChanged}"
-                                ToolTip="输入新方案名称，或输入新名称后重命名当前方案" />
+                            <Grid Margin="0,8,0,0">
+                                <TextBox
+                                    x:Name="PresetNameTextBox"
+                                    Text="{Binding Presets.PresetName, UpdateSourceTrigger=PropertyChanged}"
+                                    ToolTip="输入新方案名称，或输入新名称后重命名当前方案" />
+                                <TextBlock
+                                    Margin="10,0"
+                                    IsHitTestVisible="False"
+                                    Foreground="{DynamicResource TextSecondaryBrush}"
+                                    Text="输入方案名称">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Text, ElementName=PresetNameTextBox}" Value="">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding Text, ElementName=PresetNameTextBox}" Value="{x:Null}">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </Grid>
                             <Button
                                 Margin="0,8,0,0"
                                 Command="{Binding Presets.SaveAsCommand}"
@@ -329,9 +421,17 @@
                                 Text="{Binding Presets.Notice}"
                                 TextWrapping="Wrap" />
                         </StackPanel>
-                    </Expander>
+                            </GroupBox>
+                        </ScrollViewer>
+                    </TabItem>
 
-                    <Expander Header="压缩" IsExpanded="True">
+                    <TabItem Header="基础处理" IsSelected="True">
+                        <ScrollViewer
+                            Padding="2,12,8,8"
+                            HorizontalScrollBarVisibility="Disabled"
+                            VerticalScrollBarVisibility="Auto">
+                            <StackPanel>
+                    <GroupBox Header="压缩">
                         <StackPanel Margin="0,10,0,0">
                             <TextBlock
                                 Margin="0,0,0,7"
@@ -341,14 +441,29 @@
                             <CheckBox IsChecked="{Binding Settings.CompressionEnabled}" Content="限制文件大小" />
                             <TextBlock Margin="0,10,0,5" Style="{StaticResource FieldLabel}" Text="目标大小（MB）" />
                             <TextBox Text="{Binding Settings.TargetMegabytes, UpdateSourceTrigger=PropertyChanged}" />
+                            <Grid Margin="0,8,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="10" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Style="{StaticResource FieldLabel}" Text="JPEG 最低质量（20-95）" />
+                                    <TextBox Text="{Binding Settings.MinimumJpegQuality, UpdateSourceTrigger=PropertyChanged}" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Style="{StaticResource FieldLabel}" Text="WebP 最低质量（20-95）" />
+                                    <TextBox Text="{Binding Settings.MinimumWebpQuality, UpdateSourceTrigger=PropertyChanged}" />
+                                </StackPanel>
+                            </Grid>
                             <CheckBox
                                 Margin="0,8,0,0"
                                 IsChecked="{Binding Settings.AllowPngQuantization}"
                                 Content="允许 PNG 有损量化" />
                         </StackPanel>
-                    </Expander>
+                    </GroupBox>
 
-                    <Expander Header="尺寸与比例" IsExpanded="True">
+                    <GroupBox Margin="0,16,0,0" Header="尺寸与比例">
                         <StackPanel Margin="0,10,0,0">
                             <TextBlock
                                 Margin="0,0,0,7"
@@ -402,21 +517,30 @@
                                 SelectedValue="{Binding Settings.CropAnchor}"
                                 SelectedValuePath="Value" />
                         </StackPanel>
-                    </Expander>
+                    </GroupBox>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </TabItem>
 
-                    <Expander Header="AI 抠图" IsExpanded="True">
+                    <TabItem Header="AI 与背景">
+                        <ScrollViewer
+                            Padding="2,12,8,8"
+                            HorizontalScrollBarVisibility="Disabled"
+                            VerticalScrollBarVisibility="Auto">
+                            <StackPanel>
+                    <GroupBox Header="AI 抠图">
                         <StackPanel Margin="0,10,0,0">
                             <TextBlock
                                 Margin="0,0,0,7"
                                 Style="{StaticResource SecondaryText}"
-                                Text="AI 抠图：在本机识别主体并生成透明背景。模型按需下载，图片不会上传。"
+                                Text="AI 抠图：在本机识别主体并生成透明背景。模型可在线下载或从本地文件导入，图片不会上传。"
                                 TextWrapping="Wrap" />
                             <ComboBox
                                 DisplayMemberPath="Label"
                                 ItemsSource="{Binding Settings.BackgroundRemovalModes}"
                                 SelectedValue="{Binding Settings.BackgroundRemovalMode}"
                                 SelectedValuePath="Value" />
-                            <TextBlock Margin="0,10,0,4" FontWeight="SemiBold" Text="人像模型" />
+                            <TextBlock Margin="0,10,0,4" FontWeight="SemiBold" Text="BiRefNet 高精度人像模型" />
                             <TextBlock
                                 Style="{StaticResource SecondaryText}"
                                 Text="{Binding AiBackgroundRemoval.PortraitStatus}" />
@@ -434,7 +558,7 @@
                                     Command="{Binding AiBackgroundRemoval.RemovePortraitCommand}"
                                     Content="删除" />
                             </Grid>
-                            <TextBlock Margin="0,12,0,4" FontWeight="SemiBold" Text="商品 / 通用物体模型" />
+                            <TextBlock Margin="0,12,0,4" FontWeight="SemiBold" Text="BiRefNet 高精度通用模型" />
                             <TextBlock
                                 Style="{StaticResource SecondaryText}"
                                 Text="{Binding AiBackgroundRemoval.GeneralStatus}" />
@@ -452,18 +576,26 @@
                                     Command="{Binding AiBackgroundRemoval.RemoveGeneralCommand}"
                                     Content="删除" />
                             </Grid>
+                            <Button
+                                Margin="0,10,0,0"
+                                Command="{Binding AiBackgroundRemoval.ImportLocalModelCommand}"
+                                Content="从本地文件导入模型" />
                             <ProgressBar
                                 Margin="0,10,0,0"
                                 Value="{Binding AiBackgroundRemoval.DownloadProgress}" />
+                            <Button
+                                Margin="0,8,0,0"
+                                Command="{Binding AiBackgroundRemoval.CancelInstallCommand}"
+                                Content="取消模型操作" />
                             <TextBlock
                                 Margin="0,7,0,0"
                                 Foreground="{DynamicResource WarningBrush}"
                                 Text="{Binding AiBackgroundRemoval.Notice}"
                                 TextWrapping="Wrap" />
                         </StackPanel>
-                    </Expander>
+                    </GroupBox>
 
-                    <Expander Header="背景" IsExpanded="False">
+                    <GroupBox Margin="0,16,0,0" Header="背景">
                         <StackPanel Margin="0,10,0,0">
                             <TextBlock
                                 Margin="0,0,0,7"
@@ -475,7 +607,65 @@
                                 ItemsSource="{Binding Settings.BackgroundModes}"
                                 SelectedValue="{Binding Settings.BackgroundMode}"
                                 SelectedValuePath="Value" />
-                            <TextBlock Margin="0,8,0,5" Style="{StaticResource FieldLabel}" Text="自定义颜色" />
+                            <TextBlock Margin="0,8,0,5" Style="{StaticResource FieldLabel}" Text="常用颜色" />
+                            <StackPanel Orientation="Horizontal">
+                                <Button Width="32" Height="32" MinHeight="32" Padding="0" Background="#FFFFFF" Tag="#FFFFFF" ToolTip="白色" Click="OnColorSwatchClick" />
+                                <Button Width="32" Height="32" MinHeight="32" Margin="6,0,0,0" Padding="0" Background="#111111" Tag="#111111" ToolTip="黑色" Click="OnColorSwatchClick" />
+                                <Button Width="32" Height="32" MinHeight="32" Margin="6,0,0,0" Padding="0" Background="#808080" Tag="#808080" ToolTip="灰色" Click="OnColorSwatchClick" />
+                                <Button Width="32" Height="32" MinHeight="32" Margin="6,0,0,0" Padding="0" Background="#E53935" Tag="#E53935" ToolTip="红色" Click="OnColorSwatchClick" />
+                                <Button Width="32" Height="32" MinHeight="32" Margin="6,0,0,0" Padding="0" Background="#1E88E5" Tag="#1E88E5" ToolTip="蓝色" Click="OnColorSwatchClick" />
+                                <Button Width="32" Height="32" MinHeight="32" Margin="6,0,0,0" Padding="0" Background="#43A047" Tag="#43A047" ToolTip="绿色" Click="OnColorSwatchClick" />
+                            </StackPanel>
+                            <Button
+                                x:Name="OpenBackgroundColorPickerButton"
+                                Margin="0,8,0,0"
+                                Click="OnChooseCustomBackgroundColor"
+                                Content="打开颜色选择器" />
+                            <Popup
+                                x:Name="BackgroundColorPickerPopup"
+                                AllowsTransparency="True"
+                                Placement="Bottom"
+                                PlacementTarget="{Binding ElementName=OpenBackgroundColorPickerButton}"
+                                StaysOpen="False">
+                                <Border
+                                    Width="292"
+                                    Margin="0,4,0,0"
+                                    Padding="14"
+                                    Background="{DynamicResource SurfaceBrush}"
+                                    BorderBrush="{DynamicResource BorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="6">
+                                    <StackPanel>
+                                        <TextBlock Margin="0,0,0,10" FontWeight="SemiBold" Text="选择接近的颜色" />
+                                        <UniformGrid Columns="6">
+                                            <Button Height="36" Margin="2" Padding="0" Background="#FFFFFF" Tag="#FFFFFF" ToolTip="白色" Click="OnColorSwatchClick" />
+                                            <Button Height="36" Margin="2" Padding="0" Background="#E0E0E0" Tag="#E0E0E0" ToolTip="浅灰" Click="OnColorSwatchClick" />
+                                            <Button Height="36" Margin="2" Padding="0" Background="#808080" Tag="#808080" ToolTip="灰色" Click="OnColorSwatchClick" />
+                                            <Button Height="36" Margin="2" Padding="0" Background="#212121" Tag="#212121" ToolTip="深灰" Click="OnColorSwatchClick" />
+                                            <Button Height="36" Margin="2" Padding="0" Background="#111111" Tag="#111111" ToolTip="黑色" Click="OnColorSwatchClick" />
+                                            <Button Height="36" Margin="2" Padding="0" Background="#795548" Tag="#795548" ToolTip="棕色" Click="OnColorSwatchClick" />
+                                            <Button Height="36" Margin="2" Padding="0" Background="#F44336" Tag="#F44336" ToolTip="红色" Click="OnColorSwatchClick" />
+                                            <Button Height="36" Margin="2" Padding="0" Background="#FF9800" Tag="#FF9800" ToolTip="橙色" Click="OnColorSwatchClick" />
+                                            <Button Height="36" Margin="2" Padding="0" Background="#FFEB3B" Tag="#FFEB3B" ToolTip="黄色" Click="OnColorSwatchClick" />
+                                            <Button Height="36" Margin="2" Padding="0" Background="#4CAF50" Tag="#4CAF50" ToolTip="绿色" Click="OnColorSwatchClick" />
+                                            <Button Height="36" Margin="2" Padding="0" Background="#00BCD4" Tag="#00BCD4" ToolTip="青色" Click="OnColorSwatchClick" />
+                                            <Button Height="36" Margin="2" Padding="0" Background="#2196F3" Tag="#2196F3" ToolTip="蓝色" Click="OnColorSwatchClick" />
+                                            <Button Height="36" Margin="2" Padding="0" Background="#3F51B5" Tag="#3F51B5" ToolTip="靛蓝" Click="OnColorSwatchClick" />
+                                            <Button Height="36" Margin="2" Padding="0" Background="#673AB7" Tag="#673AB7" ToolTip="紫色" Click="OnColorSwatchClick" />
+                                            <Button Height="36" Margin="2" Padding="0" Background="#E91E63" Tag="#E91E63" ToolTip="粉色" Click="OnColorSwatchClick" />
+                                            <Button Height="36" Margin="2" Padding="0" Background="#FFF3E0" Tag="#FFF3E0" ToolTip="暖白" Click="OnColorSwatchClick" />
+                                            <Button Height="36" Margin="2" Padding="0" Background="#E3F2FD" Tag="#E3F2FD" ToolTip="冷白" Click="OnColorSwatchClick" />
+                                            <Button Height="36" Margin="2" Padding="0" Background="#F5F5F5" Tag="#F5F5F5" ToolTip="中性白" Click="OnColorSwatchClick" />
+                                        </UniformGrid>
+                                        <TextBlock
+                                            Margin="0,9,0,0"
+                                            Style="{StaticResource SecondaryText}"
+                                            Text="需要精确颜色时，在下方输入十六进制值。"
+                                            TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+                            </Popup>
+                            <TextBlock Margin="0,8,0,5" Style="{StaticResource FieldLabel}" Text="精确颜色值（#RRGGBB）" />
                             <TextBox Text="{Binding Settings.CustomBackgroundColor, UpdateSourceTrigger=PropertyChanged}" />
                             <TextBlock
                                 Margin="0,7,0,0"
@@ -483,22 +673,17 @@
                                 Text="{Binding Settings.Notice}"
                                 TextWrapping="Wrap" />
                         </StackPanel>
-                    </Expander>
+                    </GroupBox>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </TabItem>
 
-                    <Expander Header="元数据" IsExpanded="False">
-                        <StackPanel Margin="0,10,0,0">
-                            <TextBlock
-                                Margin="0,0,0,7"
-                                Style="{StaticResource SecondaryText}"
-                                Text="元数据：控制 EXIF、定位信息和色彩配置是否写入新图。"
-                                TextWrapping="Wrap" />
-                            <CheckBox IsChecked="{Binding Settings.PreserveExif}" Content="保留 EXIF" />
-                            <CheckBox IsChecked="{Binding Settings.PreserveGps}" Content="保留 GPS 信息" />
-                            <CheckBox IsChecked="{Binding Settings.PreserveIccProfile}" Content="保留 ICC 色彩配置" />
-                        </StackPanel>
-                    </Expander>
-
-                    <Expander Header="输出" IsExpanded="True">
+                    <TabItem Header="输出">
+                        <ScrollViewer
+                            Padding="2,12,8,8"
+                            HorizontalScrollBarVisibility="Disabled"
+                            VerticalScrollBarVisibility="Auto">
+                    <GroupBox Header="输出">
                         <StackPanel Margin="0,10,0,0">
                             <TextBlock
                                 Margin="0,0,0,7"
@@ -534,9 +719,39 @@
                                     ToolTip="选择输出文件夹" />
                             </Grid>
                         </StackPanel>
-                    </Expander>
+                    </GroupBox>
+                        </ScrollViewer>
+                    </TabItem>
 
-                    <Expander Header="外观" IsExpanded="False">
+                    <TabItem Header="元数据">
+                        <ScrollViewer
+                            Padding="2,12,8,8"
+                            HorizontalScrollBarVisibility="Disabled"
+                            VerticalScrollBarVisibility="Auto">
+                    <GroupBox Header="元数据">
+                        <StackPanel Margin="0,10,0,0">
+                            <TextBlock
+                                Margin="0,0,0,7"
+                                Style="{StaticResource SecondaryText}"
+                                Text="元数据：控制 EXIF、定位信息和色彩配置是否写入新图。"
+                                TextWrapping="Wrap" />
+                            <CheckBox IsChecked="{Binding Settings.PreserveExif}" Content="保留 EXIF" />
+                            <CheckBox IsChecked="{Binding Settings.PreserveGps}" Content="保留 GPS 信息" />
+                            <CheckBox IsChecked="{Binding Settings.PreserveIccProfile}" Content="保留 ICC 色彩配置" />
+                            <CheckBox
+                                IsChecked="{Binding Settings.ConvertToSrgbWhenIccCannotBePreserved}"
+                                Content="不保留 ICC 时先转换为 sRGB" />
+                        </StackPanel>
+                    </GroupBox>
+                        </ScrollViewer>
+                    </TabItem>
+
+                    <TabItem Header="外观">
+                        <ScrollViewer
+                            Padding="2,12,8,8"
+                            HorizontalScrollBarVisibility="Disabled"
+                            VerticalScrollBarVisibility="Auto">
+                    <GroupBox Header="外观">
                         <StackPanel Margin="0,10,0,0">
                             <TextBlock Style="{StaticResource FieldLabel}" Text="主题" />
                             <ComboBox
@@ -559,9 +774,11 @@
                                 SelectedValue="{Binding Appearance.FontSize}"
                                 SelectedValuePath="Value" />
                         </StackPanel>
-                    </Expander>
-                </StackPanel>
-            </ScrollViewer>
+                    </GroupBox>
+                        </ScrollViewer>
+                    </TabItem>
+                </TabControl>
+            </Grid>
         </Border>
 
         <Border
@@ -575,7 +792,6 @@
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
@@ -609,15 +825,68 @@
                     Content="重试失败项" />
                 <Button
                     Grid.Column="4"
-                    Margin="0,0,8,0"
+                    Style="{StaticResource PrimaryButton}"
                     Command="{Binding StartNextBatchCommand}"
-                    Content="开启下一批" />
+                    Content="新建批次"
+                    Visibility="{Binding ShowNewBatchAction, Converter={StaticResource BooleanToVisibilityConverter}}" />
                 <Button
-                    Grid.Column="5"
+                    Grid.Column="4"
                     Style="{StaticResource PrimaryButton}"
                     Command="{Binding StartCommand}"
-                    Content="{DynamicResource StartText}" />
+                    Content="{DynamicResource StartText}"
+                    Visibility="{Binding ShowStartAction, Converter={StaticResource BooleanToVisibilityConverter}}" />
             </Grid>
         </Border>
+
+        <Grid
+            Grid.RowSpan="3"
+            Grid.ColumnSpan="3"
+            Panel.ZIndex="20"
+            Visibility="{Binding IsCompletionNoticeVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <Border Background="#66000000" />
+            <Border
+                Width="380"
+                Padding="22"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
+                BorderThickness="1"
+                CornerRadius="6">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock FontSize="18" FontWeight="SemiBold" Text="已完成" />
+                        <Button
+                            Grid.Column="1"
+                            Style="{StaticResource IconButton}"
+                            Command="{Binding DismissCompletionNoticeCommand}"
+                            Content="&#xE711;"
+                            ToolTip="关闭" />
+                    </Grid>
+                    <TextBlock
+                        Grid.Row="1"
+                        Margin="0,16,0,18"
+                        LineHeight="23"
+                        Text="{Binding CompletionNoticeText}"
+                        TextWrapping="Wrap" />
+                    <Button
+                        Grid.Row="2"
+                        Width="96"
+                        HorizontalAlignment="Right"
+                        Style="{StaticResource PrimaryButton}"
+                        Command="{Binding DismissCompletionNoticeCommand}"
+                        Content="确定" />
+                </Grid>
+            </Border>
+        </Grid>
     </Grid>
 </Window>

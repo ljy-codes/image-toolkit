@@ -36,7 +36,20 @@ public sealed class ImageFileDiscovery : IImageFileDiscovery
                 continue;
             }
 
-            var path = Path.GetFullPath(rawPath);
+            string path;
+            try
+            {
+                path = Path.GetFullPath(rawPath);
+            }
+            catch (Exception exception)
+                when (exception is ArgumentException or
+                    NotSupportedException or
+                    PathTooLongException)
+            {
+                rejected.Add(new RejectedPath(rawPath, "路径格式无效。"));
+                continue;
+            }
+
             if (File.Exists(path))
             {
                 AddFile(

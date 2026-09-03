@@ -62,3 +62,37 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "启动 {#MyAppName}"; Flags: nowait postinstall skipifsilent
+
+[Code]
+var
+  DeleteUserData: Boolean;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  UserDataDirectory: String;
+begin
+  if (CurUninstallStep = usUninstall) and not UninstallSilent then
+  begin
+    DeleteUserData :=
+      MsgBox(
+        '是否同时删除当前 Windows 用户的全部苏影枢数据？' + #13#10 + #13#10 +
+        '删除范围包括：已下载的 AI 模型、配置、参数方案和日志。' + #13#10 +
+        '此操作无法恢复。选择“否”将保留这些数据，便于重新安装后继续使用。',
+        mbConfirmation,
+        MB_YESNO or MB_DEFBUTTON2) = IDYES;
+  end;
+
+  if (CurUninstallStep = usPostUninstall) and DeleteUserData then
+  begin
+    UserDataDirectory := ExpandConstant('{localappdata}\ImageToolkit');
+    if DirExists(UserDataDirectory) and
+       not DelTree(UserDataDirectory, True, True, True) then
+    begin
+      MsgBox(
+        '部分用户数据未能删除。请关闭仍在使用相关文件的程序后，手动删除：' + #13#10 +
+        UserDataDirectory,
+        mbError,
+        MB_OK);
+    end;
+  end;
+end;

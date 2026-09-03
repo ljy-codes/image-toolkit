@@ -11,6 +11,8 @@ public interface IDesktopFilePicker
     Task<string?> PickConfigurationImportPathAsync();
 
     Task<string?> PickConfigurationExportPathAsync(string suggestedFileName);
+
+    Task<string?> PickAiModelPathAsync();
 }
 
 public sealed class DesktopFilePicker : IDesktopFilePicker
@@ -65,6 +67,20 @@ public sealed class DesktopFilePicker : IDesktopFilePicker
             AddExtension = true,
             FileName = suggestedFileName,
             OverwritePrompt = true
+        };
+        return Task.FromResult(dialog.ShowDialog() == true
+            ? dialog.FileName
+            : null);
+    }
+
+    public Task<string?> PickAiModelPathAsync()
+    {
+        var dialog = new OpenFileDialog
+        {
+            Multiselect = false,
+            Title = "选择本地 AI 模型",
+            Filter = "ONNX 模型|*.onnx|所有文件|*.*",
+            DefaultExt = ".onnx"
         };
         return Task.FromResult(dialog.ShowDialog() == true
             ? dialog.FileName

@@ -11,32 +11,32 @@ public sealed record AiModelManifest(
     int InputWidth,
     int InputHeight)
 {
-    public const string PortraitModelId = "u2net-human-seg";
-    public const string GeneralModelId = "u2net";
+    public const string PortraitModelId = "birefnet-portrait";
+    public const string GeneralModelId = "birefnet-general";
 
     public static IReadOnlyList<AiModelManifest> Defaults { get; } =
     [
         new(
             PortraitModelId,
-            "人像抠图模型",
+            "BiRefNet 高精度人像模型",
             new Uri(
-                "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net_human_seg.onnx"),
-            "u2net_human_seg.onnx",
-            175_997_641,
-            "01EB6A29A5C4D8EDB30B56ADAD9BB3A2A0535338E480724A213E0ACFD2D1C73C",
-            "U-2-Net Apache-2.0；ONNX 由 rembg 项目托管，安装包不包含模型文件",
-            320,
-            320),
+                "https://github.com/danielgatis/rembg/releases/download/v0.0.0/BiRefNet-portrait-epoch_150.onnx"),
+            "birefnet-portrait.onnx",
+            972_666_916,
+            "1BA1C8FF5A7BBFADC8D8D13FB11D7BE793F91F23D9D466549E37A854F6668F99",
+            "BiRefNet MIT；ONNX 由 rembg 项目托管，安装包不包含模型文件",
+            1024,
+            1024),
         new(
             GeneralModelId,
-            "商品 / 通用物体模型",
+            "BiRefNet 高精度通用模型",
             new Uri(
-                "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx"),
-            "u2net.onnx",
-            175_997_641,
-            "8D10D2F3BB75AE3B6D527C77944FC5E7DCD94B29809D47A739A7A728A912B491",
-            "U-2-Net Apache-2.0；ONNX 由 rembg 项目托管，安装包不包含模型文件",
-            320,
-            320)
+                "https://github.com/danielgatis/rembg/releases/download/v0.0.0/BiRefNet-general-epoch_244.onnx"),
+            "birefnet-general.onnx",
+            972_666_916,
+            "58F621F00F5D756097615970A88A791584600DCF7C45B18A0A6267535A1EBD3C",
+            "BiRefNet MIT；ONNX 由 rembg 项目托管，安装包不包含模型文件",
+            1024,
+            1024)
     ];
 }

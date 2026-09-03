@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using ImageMagick;
 using ImageToolkit.Application.Batch;
 using ImageToolkit.Application.Processing;
@@ -21,7 +22,7 @@ public sealed class AiAcceptanceTests
         _output = output;
     }
 
-    [Theory]
+    [AiAcceptanceTheory]
     [InlineData(
         BackgroundRemovalMode.Portrait,
         "微信图片_20260902102806_8_102.jpg",
@@ -105,7 +106,7 @@ public sealed class AiAcceptanceTests
         Assert.True(softEdgeRatio >= 0.001);
     }
 
-    [Fact]
+    [AiAcceptanceFact]
     [Trait("Category", "UserAssets")]
     [Trait("Category", "AiAcceptance")]
     public async Task Real_ai_batch_finishes_with_valid_transparent_pngs()
@@ -212,6 +213,218 @@ public sealed class AiAcceptanceTests
         }
     }
 
+    [AiCorpusAcceptanceFact]
+    [Trait("Category", "AiCorpusAcceptance")]
+    public async Task Real_general_model_processes_curated_diverse_images()
+    {
+        var modelDirectory = GetRequiredEnvironmentVariable(
+            "IMAGETOOLKIT_AI_MODEL_DIR");
+        var corpusDirectory = GetRequiredEnvironmentVariable(
+            "IMAGETOOLKIT_ACCEPTANCE_CORPUS_DIR");
+        var evidenceDirectory = GetRequiredEnvironmentVariable(
+            "IMAGETOOLKIT_ACCEPTANCE_EVIDENCE_DIR");
+        var outputDirectory = Path.Combine(evidenceDirectory, "ai-corpus");
+        ResetDirectory(outputDirectory);
+        var samples = new[]
+        {
+            ("people", "007-portrait.jpg"),
+            ("group", "014-group.jpg"),
+            ("tree", "019-product.jpg"),
+            ("gecko", "033-glass.jpg"),
+            ("cat", "043-animal.jpg"),
+            ("frosted-plant", "041-animal.jpg"),
+            ("hoverfly", "049-insect.jpg"),
+            ("food", "061-food.jpg"),
+            ("building", "066-architecture.jpg"),
+            ("night-wheel", "076-low-light.jpg"),
+            ("camera", "084-white-object.jpg"),
+            ("butterflies", "091-white-object.jpg"),
+            ("phone", "093-electronics.jpg"),
+            ("wheel-spokes", "098-fine-structure.jpg"),
+            ("vehicle-people", "097-vehicle.jpg")
+        };
+        var failures = new List<string>();
+
+        using var client = new HttpClient
+        {
+            Timeout = TimeSpan.FromMinutes(10)
+        };
+        var manager = new LocalAiModelManager(client, modelDirectory);
+        var status = await manager.GetStatusAsync(
+            AiModelManifest.GeneralModelId,
+            CancellationToken.None);
+        Assert.True(status.IsInstalled);
+        using var engine = new OnnxBackgroundRemovalEngine(manager);
+
+        foreach (var sample in samples)
+        {
+            var sourcePath = Path.Combine(corpusDirectory, sample.Item2);
+            Assert.True(File.Exists(sourcePath), $"缺少验收图片：{sample.Item2}");
+            var outputPath = Path.Combine(
+                outputDirectory,
+                $"{sample.Item1}-{Path.GetFileNameWithoutExtension(sourcePath)}.png");
+            var stopwatch = Stopwatch.StartNew();
+            await using (var input = File.OpenRead(sourcePath))
+            await using (var output = File.Create(outputPath))
+            {
+                await engine.RemoveBackgroundAsync(
+                    input,
+                    output,
+                    BackgroundRemovalMode.GeneralObject,
+                    CancellationToken.None);
+            }
+
+            stopwatch.Stop();
+            using var source = new MagickImage(sourcePath);
+            using var result = new MagickImage(outputPath);
+            Assert.Equal(source.Width, result.Width);
+            Assert.Equal(source.Height, result.Height);
+            Assert.True(result.HasAlpha);
+            var rgba = result.GetPixels().ToByteArray(PixelMapping.RGBA);
+            Assert.NotNull(rgba);
+            var alpha = rgba
+                .Where((_, index) => index % 4 == 3)
+                .ToArray();
+            var transparentRatio =
+                alpha.Count(value => value <= 16) / (double)alpha.Length;
+            var opaqueRatio =
+                alpha.Count(value => value >= 239) / (double)alpha.Length;
+            _output.WriteLine(
+                $"scene={sample.Item1}; file={sample.Item2}; " +
+                $"elapsed={stopwatch.Elapsed}; " +
+                $"transparent={transparentRatio:P2}; opaque={opaqueRatio:P2}; " +
+                $"output={outputPath}");
+            if (transparentRatio < 0.01)
+            {
+                failures.Add($"{sample.Item1} 没有形成有效透明背景");
+            }
+
+            if (opaqueRatio < 0.01)
+            {
+                failures.Add($"{sample.Item1} 没有保留有效前景");
+            }
+        }
+
+        Assert.True(
+            failures.Count == 0,
+            $"多场景 AI 验收失败：{string.Join("；", failures)}。");
+    }
+
+    [AiCorpusAcceptanceFact]
+    [Trait("Category", "AiCorpusAcceptance")]
+    public async Task Ambiguous_landscape_is_rejected_with_clear_reason()
+    {
+        var modelDirectory = GetRequiredEnvironmentVariable(
+            "IMAGETOOLKIT_AI_MODEL_DIR");
+        var corpusDirectory = GetRequiredEnvironmentVariable(
+            "IMAGETOOLKIT_ACCEPTANCE_CORPUS_DIR");
+        var evidenceDirectory = GetRequiredEnvironmentVariable(
+            "IMAGETOOLKIT_ACCEPTANCE_EVIDENCE_DIR");
+        var outputDirectory = Path.Combine(
+            evidenceDirectory,
+            "ai-ambiguous-landscape");
+        ResetDirectory(outputDirectory);
+
+        using var client = new HttpClient
+        {
+            Timeout = TimeSpan.FromMinutes(10)
+        };
+        var manager = new LocalAiModelManager(client, modelDirectory);
+        using var engine = new OnnxBackgroundRemovalEngine(manager);
+        var pipeline = new ImageProcessingPipeline(
+            new ProcessingRequestValidator(),
+            new OutputPathResolver(),
+            new MagickImageProcessor(new AtomicFileWriter(), engine));
+        var request = ProcessingRequest.Default with
+        {
+            Compression = ProcessingRequest.Default.Compression with
+            {
+                Enabled = false
+            },
+            AiBackgroundRemoval = ProcessingRequest.Default.AiBackgroundRemoval with
+            {
+                Mode = BackgroundRemovalMode.GeneralObject
+            },
+            Background = ProcessingRequest.Default.Background with
+            {
+                Mode = BackgroundMode.Transparent
+            },
+            Output = ProcessingRequest.Default.Output with
+            {
+                Format = OutputImageFormat.Png,
+                Mode = OutputMode.SpecificDirectory,
+                DirectoryPath = outputDirectory
+            }
+        };
+        var sourcePath = Path.Combine(corpusDirectory, "095-landscape.jpg");
+
+        var result = await pipeline.ProcessAsync(
+            sourcePath,
+            request,
+            CancellationToken.None);
+
+        Assert.Equal(ImageProcessingStatus.Failed, result.Status);
+        Assert.Equal("ai.subject-not-found", result.ErrorCode);
+        Assert.Null(result.OutputPath);
+        Assert.Contains("未识别到明确主体", result.Diagnostic?.UserMessage);
+        Assert.Contains("全景", result.Diagnostic?.UserMessage);
+        Assert.Contains("未生成输出文件", result.Diagnostic?.UserMessage);
+        Assert.Empty(Directory.EnumerateFiles(outputDirectory));
+    }
+
+    [AiCorpusAcceptanceFact]
+    [Trait("Category", "AiPostprocessingAcceptance")]
+    public async Task Annotation_cleanup_preserves_real_fine_subjects()
+    {
+        var modelDirectory = GetRequiredEnvironmentVariable(
+            "IMAGETOOLKIT_AI_MODEL_DIR");
+        var corpusDirectory = GetRequiredEnvironmentVariable(
+            "IMAGETOOLKIT_ACCEPTANCE_CORPUS_DIR");
+        var evidenceDirectory = GetRequiredEnvironmentVariable(
+            "IMAGETOOLKIT_ACCEPTANCE_EVIDENCE_DIR");
+        var outputDirectory = Path.Combine(
+            evidenceDirectory,
+            "ai-postprocessing");
+        ResetDirectory(outputDirectory);
+        var samples = new[]
+        {
+            ("butterflies", "091-white-object.jpg", 15),
+            ("hoverfly", "049-insect.jpg", 2),
+            ("wheel-spokes", "098-fine-structure.jpg", 2)
+        };
+
+        using var client = new HttpClient
+        {
+            Timeout = TimeSpan.FromMinutes(10)
+        };
+        var manager = new LocalAiModelManager(client, modelDirectory);
+        using var engine = new OnnxBackgroundRemovalEngine(manager);
+
+        foreach (var sample in samples)
+        {
+            var sourcePath = Path.Combine(corpusDirectory, sample.Item2);
+            var outputPath = Path.Combine(
+                outputDirectory,
+                $"{sample.Item1}-{Path.GetFileNameWithoutExtension(sourcePath)}.png");
+            await using (var input = File.OpenRead(sourcePath))
+            await using (var output = File.Create(outputPath))
+            {
+                await engine.RemoveBackgroundAsync(
+                    input,
+                    output,
+                    BackgroundRemovalMode.GeneralObject,
+                    CancellationToken.None);
+            }
+
+            using var result = new MagickImage(outputPath);
+            var componentSizes = GetForegroundComponentSizes(result);
+            _output.WriteLine(
+                $"scene={sample.Item1}; components={componentSizes.Count}; " +
+                $"largest={string.Join(",", componentSizes.Take(15))}");
+            Assert.InRange(componentSizes.Count, 1, sample.Item3);
+        }
+    }
+
     private static string GetRequiredEnvironmentVariable(string name)
     {
         var value = Environment.GetEnvironmentVariable(name);
@@ -227,6 +440,62 @@ public sealed class AiAcceptanceTests
         }
 
         Directory.CreateDirectory(path);
+    }
+
+    private static IReadOnlyList<int> GetForegroundComponentSizes(
+        MagickImage image)
+    {
+        var width = checked((int)image.Width);
+        var height = checked((int)image.Height);
+        var rgba = image.GetPixels().ToByteArray(PixelMapping.RGBA)!;
+        var foreground = new bool[width * height];
+        for (var index = 0; index < foreground.Length; index++)
+        {
+            foreground[index] = rgba[index * 4 + 3] >= 128;
+        }
+
+        var visited = new bool[foreground.Length];
+        var queue = new Queue<int>();
+        var sizes = new List<int>();
+        for (var start = 0; start < foreground.Length; start++)
+        {
+            if (!foreground[start] || visited[start])
+            {
+                continue;
+            }
+
+            queue.Clear();
+            queue.Enqueue(start);
+            visited[start] = true;
+            var size = 0;
+            while (queue.Count > 0)
+            {
+                var index = queue.Dequeue();
+                size++;
+                var x = index % width;
+                var y = index / width;
+                Visit(index - 1, x > 0);
+                Visit(index + 1, x < width - 1);
+                Visit(index - width, y > 0);
+                Visit(index + width, y < height - 1);
+            }
+
+            sizes.Add(size);
+        }
+
+        sizes.Sort((left, right) => right.CompareTo(left));
+        return sizes;
+
+        void Visit(int index, bool valid)
+        {
+            if (!valid || visited[index] || !foreground[index])
+            {
+                return;
+            }
+
+            visited[index] = true;
+            queue.Enqueue(index);
+        }
     }
 
     private static string FindUserImageDirectory()

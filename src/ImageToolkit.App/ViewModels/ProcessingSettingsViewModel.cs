@@ -52,9 +52,9 @@ public sealed partial class ProcessingSettingsViewModel : ObservableObject
     public IReadOnlyList<ChoiceOption<BackgroundRemovalMode>> BackgroundRemovalModes { get; } =
     [
         new(BackgroundRemovalMode.Disabled, "关闭"),
-        new(BackgroundRemovalMode.Automatic, "自动（通用模型）"),
-        new(BackgroundRemovalMode.Portrait, "人像"),
-        new(BackgroundRemovalMode.GeneralObject, "商品 / 普通物体")
+        new(BackgroundRemovalMode.Automatic, "自动（高精度通用）"),
+        new(BackgroundRemovalMode.Portrait, "高精度人像"),
+        new(BackgroundRemovalMode.GeneralObject, "高精度通用主体")
     ];
 
     [ObservableProperty]
@@ -62,6 +62,12 @@ public sealed partial class ProcessingSettingsViewModel : ObservableObject
 
     [ObservableProperty]
     private double _targetMegabytes = 1;
+
+    [ObservableProperty]
+    private int _minimumJpegQuality = 45;
+
+    [ObservableProperty]
+    private int _minimumWebpQuality = 45;
 
     [ObservableProperty]
     private bool _resizeEnabled;
@@ -116,6 +122,9 @@ public sealed partial class ProcessingSettingsViewModel : ObservableObject
     private bool _preserveIccProfile = true;
 
     [ObservableProperty]
+    private bool _convertToSrgbWhenIccCannotBePreserved = true;
+
+    [ObservableProperty]
     private bool _allowPngQuantization;
 
     [ObservableProperty]
@@ -125,6 +134,8 @@ public sealed partial class ProcessingSettingsViewModel : ObservableObject
     {
         CompressionEnabled = request.Compression.Enabled;
         TargetMegabytes = request.Compression.TargetBytes / 1024d / 1024d;
+        MinimumJpegQuality = request.Compression.MinimumJpegQuality;
+        MinimumWebpQuality = request.Compression.MinimumWebpQuality;
         AllowPngQuantization = request.Compression.AllowPngQuantization;
         ResizeEnabled = request.Resize.Enabled;
         Width = request.Resize.Width;
@@ -142,6 +153,8 @@ public sealed partial class ProcessingSettingsViewModel : ObservableObject
         PreserveExif = request.Metadata.PreserveExif;
         PreserveGps = request.Metadata.PreserveGps;
         PreserveIccProfile = request.Metadata.PreserveIccProfile;
+        ConvertToSrgbWhenIccCannotBePreserved =
+            request.Metadata.ConvertToSrgbWhenIccCannotBePreserved;
         OutputFormat = request.Output.Format;
         OutputMode = request.Output.Mode;
         OutputDirectory = request.Output.DirectoryPath;
@@ -158,6 +171,8 @@ public sealed partial class ProcessingSettingsViewModel : ObservableObject
                 TargetBytes = Math.Max(
                     1,
                     (long)Math.Round(TargetMegabytes * 1024 * 1024)),
+                MinimumJpegQuality = MinimumJpegQuality,
+                MinimumWebpQuality = MinimumWebpQuality,
                 AllowPngQuantization = AllowPngQuantization
             },
             Resize = defaults.Resize with
@@ -187,7 +202,9 @@ public sealed partial class ProcessingSettingsViewModel : ObservableObject
             {
                 PreserveExif = PreserveExif,
                 PreserveGps = PreserveGps,
-                PreserveIccProfile = PreserveIccProfile
+                PreserveIccProfile = PreserveIccProfile,
+                ConvertToSrgbWhenIccCannotBePreserved =
+                    ConvertToSrgbWhenIccCannotBePreserved
             },
             Output = defaults.Output with
             {
@@ -204,8 +221,34 @@ public sealed partial class ProcessingSettingsViewModel : ObservableObject
     partial void OnBackgroundModeChanged(BackgroundMode value) =>
         EnsureTransparentOutputCompatibility();
 
-    partial void OnBackgroundRemovalModeChanged(BackgroundRemovalMode value) =>
+    partial void OnBackgroundRemovalModeChanged(BackgroundRemovalMode value)
+    {
+        if (value != Domain.Enums.BackgroundRemovalMode.Disabled)
+        {
+            if (OutputMode == OutputMode.OverwriteOriginal)
+            {
+                OutputMode = OutputMode.SourceDirectory;
+            }
+
+            if (BackgroundMode == Domain.Enums.BackgroundMode.Preserve)
+            {
+                BackgroundMode = Domain.Enums.BackgroundMode.Transparent;
+            }
+
+            if (BackgroundMode == Domain.Enums.BackgroundMode.Transparent &&
+                OutputFormat is OutputImageFormat.Original or OutputImageFormat.Jpeg)
+            {
+                OutputFormat = OutputImageFormat.Png;
+            }
+
+            Notice = BackgroundMode == Domain.Enums.BackgroundMode.Transparent
+                ? "AI 抠图已默认切换为透明 PNG 新文件；也可以改选白色、黑色或自定义实色背景。"
+                : "AI 抠图已启用，将使用所选实色背景生成新文件。";
+            return;
+        }
+
         EnsureTransparentOutputCompatibility();
+    }
 
     partial void OnOutputFormatChanged(OutputImageFormat value) =>
         EnsureTransparentOutputCompatibility();
@@ -215,23 +258,6 @@ public sealed partial class ProcessingSettingsViewModel : ObservableObject
 
     private void EnsureTransparentOutputCompatibility()
     {
-        if (BackgroundRemovalMode != Domain.Enums.BackgroundRemovalMode.Disabled)
-        {
-            if (OutputMode == OutputMode.OverwriteOriginal)
-            {
-                OutputMode = OutputMode.SourceDirectory;
-            }
-
-            if (OutputFormat is OutputImageFormat.Original or OutputImageFormat.Jpeg)
-            {
-                OutputFormat = OutputImageFormat.Png;
-            }
-
-            BackgroundMode = Domain.Enums.BackgroundMode.Transparent;
-            Notice = "AI 抠图需要透明输出，已切换为 PNG 新文件。";
-            return;
-        }
-
         if (OutputMode == OutputMode.OverwriteOriginal &&
             BackgroundMode == Domain.Enums.BackgroundMode.Transparent)
         {
@@ -250,10 +276,10 @@ public sealed partial class ProcessingSettingsViewModel : ObservableObject
         }
 
         if (BackgroundMode == Domain.Enums.BackgroundMode.Transparent &&
-            OutputFormat == OutputImageFormat.Jpeg)
+            OutputFormat is OutputImageFormat.Original or OutputImageFormat.Jpeg)
         {
             OutputFormat = OutputImageFormat.Png;
-            Notice = "JPG 不支持透明背景，已自动切换为 PNG。";
+            Notice = "透明背景需要明确使用 PNG，已自动切换输出格式。";
         }
         else
         {

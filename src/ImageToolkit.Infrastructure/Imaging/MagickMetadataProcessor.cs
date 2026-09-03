@@ -77,13 +77,10 @@ public sealed class MagickMetadataProcessor
 
         if (!options.PreserveIccProfile)
         {
-            if (image.GetColorProfile() is not null)
+            if (options.ConvertToSrgbWhenIccCannotBePreserved &&
+                image.GetColorProfile() is not null)
             {
                 image.TransformColorSpace(ColorProfiles.SRGB);
-            }
-            else
-            {
-                image.ColorSpace = ColorSpace.sRGB;
             }
 
             image.RemoveProfile("icc");

@@ -41,6 +41,59 @@ public sealed class ProcessingSettingsViewModelTests
     }
 
     [Fact]
+    public void Build_request_preserves_minimum_lossy_quality()
+    {
+        var viewModel = new ProcessingSettingsViewModel
+        {
+            MinimumJpegQuality = 38,
+            MinimumWebpQuality = 41
+        };
+
+        var request = viewModel.BuildRequest();
+
+        Assert.Equal(38, request.Compression.MinimumJpegQuality);
+        Assert.Equal(41, request.Compression.MinimumWebpQuality);
+    }
+
+    [Fact]
+    public void Apply_restores_minimum_lossy_quality()
+    {
+        var request = ProcessingRequest.Default with
+        {
+            Compression = ProcessingRequest.Default.Compression with
+            {
+                MinimumJpegQuality = 36,
+                MinimumWebpQuality = 39
+            }
+        };
+        var viewModel = new ProcessingSettingsViewModel();
+
+        viewModel.Apply(request);
+
+        Assert.Equal(36, viewModel.MinimumJpegQuality);
+        Assert.Equal(39, viewModel.MinimumWebpQuality);
+    }
+
+    [Fact]
+    public void Apply_and_build_preserve_srgb_fallback_preference()
+    {
+        var request = ProcessingRequest.Default with
+        {
+            Metadata = ProcessingRequest.Default.Metadata with
+            {
+                ConvertToSrgbWhenIccCannotBePreserved = false
+            }
+        };
+        var viewModel = new ProcessingSettingsViewModel();
+
+        viewModel.Apply(request);
+        var rebuilt = viewModel.BuildRequest();
+
+        Assert.False(viewModel.ConvertToSrgbWhenIccCannotBePreserved);
+        Assert.False(rebuilt.Metadata.ConvertToSrgbWhenIccCannotBePreserved);
+    }
+
+    [Fact]
     public void Overwrite_mode_forces_original_format()
     {
         var viewModel = new ProcessingSettingsViewModel
@@ -67,6 +120,38 @@ public sealed class ProcessingSettingsViewModelTests
         Assert.Equal(OutputMode.SourceDirectory, viewModel.OutputMode);
         Assert.Equal(OutputImageFormat.Png, viewModel.OutputFormat);
         Assert.NotNull(viewModel.Notice);
+    }
+
+    [Fact]
+    public void Ai_cutout_allows_solid_background_after_it_is_enabled()
+    {
+        var viewModel = new ProcessingSettingsViewModel
+        {
+            BackgroundRemovalMode = BackgroundRemovalMode.GeneralObject
+        };
+
+        viewModel.BackgroundMode = BackgroundMode.White;
+        viewModel.OutputFormat = OutputImageFormat.Jpeg;
+
+        Assert.Equal(BackgroundMode.White, viewModel.BackgroundMode);
+        Assert.Equal(OutputImageFormat.Jpeg, viewModel.OutputFormat);
+    }
+
+    [Fact]
+    public void Enabling_ai_defaults_to_transparent_png_new_file()
+    {
+        var viewModel = new ProcessingSettingsViewModel
+        {
+            OutputMode = OutputMode.OverwriteOriginal,
+            OutputFormat = OutputImageFormat.Original,
+            BackgroundMode = BackgroundMode.Preserve
+        };
+
+        viewModel.BackgroundRemovalMode = BackgroundRemovalMode.Portrait;
+
+        Assert.Equal(OutputMode.SourceDirectory, viewModel.OutputMode);
+        Assert.Equal(OutputImageFormat.Png, viewModel.OutputFormat);
+        Assert.Equal(BackgroundMode.Transparent, viewModel.BackgroundMode);
     }
 
     [Fact]

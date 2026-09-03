@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
 using System.Windows;
@@ -15,6 +16,7 @@ using ImageToolkit.Infrastructure.AI;
 using ImageToolkit.Infrastructure.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ImageToolkit.App;
 
@@ -40,9 +42,18 @@ public partial class App : System.Windows.Application
             Directory.CreateDirectory(dataDirectory);
             _configurationStore = new JsonConfigurationStore(
                 Path.Combine(dataDirectory, "config.json"));
-            _loggerProvider = new RollingFileLoggerProvider(
-                Path.Combine(dataDirectory, "Logs"));
-            _logger = _loggerProvider.CreateLogger("ImageToolkit.App");
+            try
+            {
+                _loggerProvider = new RollingFileLoggerProvider(
+                    Path.Combine(dataDirectory, "Logs"));
+                _logger = _loggerProvider.CreateLogger("ImageToolkit.App");
+            }
+            catch (Exception exception)
+            {
+                Trace.WriteLine($"日志初始化失败，应用将继续运行：{exception}");
+                _loggerProvider = null;
+                _logger = NullLogger.Instance;
+            }
 
             var registrations = new ServiceCollection();
             RegisterServices(registrations, _configurationStore, dataDirectory);
@@ -100,8 +111,24 @@ public partial class App : System.Windows.Application
         }
 
         _logger?.LogInformation("应用已退出。");
-        _services?.DisposeAsync().AsTask().GetAwaiter().GetResult();
-        _loggerProvider?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        try
+        {
+            _services?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
+        catch (Exception exception)
+        {
+            _logger?.LogError(exception, "退出时释放应用服务失败。");
+        }
+
+        try
+        {
+            _loggerProvider?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
+        catch (Exception exception)
+        {
+            Trace.WriteLine($"退出时释放日志服务失败：{exception}");
+        }
+
         base.OnExit(e);
     }
 

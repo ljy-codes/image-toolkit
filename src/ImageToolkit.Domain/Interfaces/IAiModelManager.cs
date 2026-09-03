@@ -13,6 +13,17 @@ public interface IAiModelManager
         IProgress<double>? progress,
         CancellationToken cancellationToken);
 
+    Task<AiModelStatus> IdentifyLocalModelAsync(
+        string sourcePath,
+        IProgress<double>? progress,
+        CancellationToken cancellationToken);
+
+    Task ImportLocalModelAsync(
+        string modelId,
+        string sourcePath,
+        IProgress<double>? progress,
+        CancellationToken cancellationToken);
+
     Task RemoveModelAsync(string modelId, CancellationToken cancellationToken);
 
     Task<string> GetModelPathAsync(

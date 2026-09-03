@@ -74,6 +74,26 @@ public sealed class ImageFileDiscoveryTests : IDisposable
         Assert.Single(result.Files);
     }
 
+    [Fact]
+    public async Task Rejects_invalid_path_without_stopping_valid_imports()
+    {
+        Directory.CreateDirectory(_directory);
+        var image = Path.Combine(_directory, "valid.jpg");
+        await File.WriteAllBytesAsync(image, [1]);
+        var discovery = new ImageFileDiscovery();
+
+        var result = await discovery.DiscoverAsync(
+            ["invalid\0path", image],
+            false,
+            CancellationToken.None);
+
+        Assert.Equal([Path.GetFullPath(image)], result.Files);
+        Assert.Contains(
+            result.Rejected,
+            item => item.Path == "invalid\0path" &&
+                    item.Reason == "路径格式无效。");
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_directory))

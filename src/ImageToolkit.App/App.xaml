@@ -12,6 +12,7 @@
             </ResourceDictionary.MergedDictionaries>
             <SolidColorBrush x:Key="WorkspaceBackgroundBrush" Color="#F3F5F7" />
             <system:Double x:Key="AppFontSize">14</system:Double>
+            <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
         </ResourceDictionary>
     </Application.Resources>
 </Application>

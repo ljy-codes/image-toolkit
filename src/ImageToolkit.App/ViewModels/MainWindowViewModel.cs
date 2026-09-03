@@ -70,6 +70,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         FileQueue.Items.CollectionChanged += OnQueueChanged;
         FileQueue.SelectedItemChanged += OnSelectedItemChanged;
         Settings.PropertyChanged += OnProcessingSettingsChanged;
+        AiBackgroundRemoval.PropertyChanged += OnAiBackgroundRemovalChanged;
     }
 
     public ProcessingSettingsViewModel Settings { get; }
@@ -104,10 +105,25 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [ObservableProperty]
     private bool _hasCompletedBatch;
 
+    public bool ShowStartAction => !HasCompletedBatch;
+
+    public bool ShowNewBatchAction => HasCompletedBatch;
+
+    public bool HasActiveWork => IsRunning || AiBackgroundRemoval.IsBusy;
+
     [ObservableProperty]
     private string? _configurationNotice;
 
-    private bool CanStart() => FileQueue.Items.Count > 0 && !IsRunning;
+    [ObservableProperty]
+    private bool _isCompletionNoticeVisible;
+
+    [ObservableProperty]
+    private string _completionNoticeText = string.Empty;
+
+    private bool CanStart() =>
+        FileQueue.Items.Count > 0 &&
+        !IsRunning &&
+        !AiBackgroundRemoval.IsBusy;
 
     private bool CanEditQueue() => !IsRunning;
 
@@ -117,7 +133,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private bool CanPauseOrCancel() => IsRunning;
 
     private bool CanRetryFailed() =>
-        !IsRunning && FileQueue.Items.Any(IsRetryable);
+        !IsRunning &&
+        !AiBackgroundRemoval.IsBusy &&
+        FileQueue.Items.Any(IsRetryable);
 
     private bool CanStartNextBatch() => HasCompletedBatch && !IsRunning;
 
@@ -327,6 +345,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
         lock (_batchStateLock)
         {
             Interlocked.Increment(ref _batchVersion);
+            IsCompletionNoticeVisible = false;
+            CompletionNoticeText = string.Empty;
             FileQueue.Items.Clear();
             FileQueue.SelectedItem = null;
             Preview.Clear();
@@ -394,6 +414,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
         IsRunning = true;
         IsPaused = false;
         HasCompletedBatch = false;
+        IsCompletionNoticeVisible = false;
+        CompletionNoticeText = string.Empty;
         _previewCancellation?.Cancel();
         var batchVersion = Interlocked.Increment(ref _batchVersion);
         _batchCancellation = new CancellationTokenSource();
@@ -454,6 +476,17 @@ public sealed partial class MainWindowViewModel : ObservableObject
                 BatchRunState.Cancelled => "任务已取消",
                 _ => $"处理完成：成功 {summary.Completed}，未达标 {summary.Unmet}，失败 {summary.Failed}"
             };
+            CompletionNoticeText = summary.State switch
+            {
+                BatchRunState.Completed =>
+                    $"已完成\n成功处理 {summary.Completed} 张图片。",
+                BatchRunState.Cancelled =>
+                    $"已完成\n任务已取消。成功 {summary.Completed} 张，取消 {summary.Cancelled} 张。",
+                _ =>
+                    $"已完成\n成功 {summary.Completed} 张，未达标 {summary.Unmet} 张，失败 {summary.Failed} 张。" +
+                    "\n请在列表中查看每张图片的明确原因。"
+            };
+            IsCompletionNoticeVisible = true;
         }
         finally
         {
@@ -467,6 +500,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
             RefreshPreview();
         }
     }
+
+    [RelayCommand]
+    private void DismissCompletionNotice() =>
+        IsCompletionNoticeVisible = false;
 
     [RelayCommand(CanExecute = nameof(CanPauseOrCancel))]
     private void PauseResume()
@@ -509,10 +546,25 @@ public sealed partial class MainWindowViewModel : ObservableObject
             return;
         }
 
-        var result = await _importImages.ExecuteAsync(
-            paths,
-            includeSubdirectories,
-            cancellationToken);
+        ImageImportResult result;
+        try
+        {
+            result = await _importImages.ExecuteAsync(
+                paths,
+                includeSubdirectories,
+                cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            _dialogs.ShowMessage(
+                $"导入失败：{exception.Message}",
+                "无法添加图片");
+            return;
+        }
         if (result.Entries.Count > 0 && HasCompletedBatch)
         {
             StartNextBatch();
@@ -559,17 +611,28 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     public async Task<bool> PrepareCloseAsync()
     {
-        if (!IsRunning)
+        var isInstallingModel = AiBackgroundRemoval.IsBusy;
+        if (!IsRunning && !isInstallingModel)
         {
             return true;
         }
 
-        if (!_dialogs.Confirm("当前任务仍在运行。取消任务并退出吗？"))
+        var message = IsRunning && isInstallingModel
+            ? "当前批处理和 AI 模型操作仍在运行。取消它们并退出吗？"
+            : IsRunning
+                ? "当前任务仍在运行。取消任务并退出吗？"
+                : "AI 模型操作仍在运行。取消操作并退出吗？";
+        if (!_dialogs.Confirm(message))
         {
             return false;
         }
 
         _batchCancellation?.Cancel();
+        if (isInstallingModel)
+        {
+            await AiBackgroundRemoval.CancelActiveInstallAsync();
+        }
+
         var activeBatch = _activeBatchTask;
         if (activeBatch is not null)
         {
@@ -579,7 +642,17 @@ public sealed partial class MainWindowViewModel : ObservableObject
         return true;
     }
 
-    partial void OnIsRunningChanged(bool value) => NotifyCommandStates();
+    partial void OnIsRunningChanged(bool value)
+    {
+        OnPropertyChanged(nameof(HasActiveWork));
+        NotifyCommandStates();
+    }
+
+    partial void OnHasCompletedBatchChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ShowStartAction));
+        OnPropertyChanged(nameof(ShowNewBatchAction));
+    }
 
     private void OnQueueChanged(object? sender, NotifyCollectionChangedEventArgs e) =>
         NotifyCommandStates();
@@ -593,6 +666,19 @@ public sealed partial class MainWindowViewModel : ObservableObject
         object? sender,
         System.ComponentModel.PropertyChangedEventArgs e) =>
         RefreshPreview();
+
+    private void OnAiBackgroundRemovalChanged(
+        object? sender,
+        System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(AiBackgroundRemovalViewModel.IsBusy))
+        {
+            return;
+        }
+
+        OnPropertyChanged(nameof(HasActiveWork));
+        NotifyCommandStates();
+    }
 
     private void RefreshPreview()
     {

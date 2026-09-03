@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
@@ -12,6 +13,7 @@ public sealed class RollingFileLoggerProvider :
     private readonly string[] _sensitiveValues;
     private readonly Channel<LogEntry> _entries;
     private readonly Task _writerTask;
+    private DateOnly? _lastCleanupDate;
     private int _disposed;
 
     public RollingFileLoggerProvider(
@@ -24,8 +26,16 @@ public sealed class RollingFileLoggerProvider :
             .Where(value => !string.IsNullOrEmpty(value))
             .Distinct(StringComparer.Ordinal)
             .ToArray() ?? [];
-        Directory.CreateDirectory(_logDirectory);
-        DeleteExpiredLogs();
+        try
+        {
+            Directory.CreateDirectory(_logDirectory);
+        }
+        catch (Exception exception)
+        {
+            Trace.WriteLine($"无法创建日志目录：{exception}");
+        }
+
+        TryDeleteExpiredLogs();
         _entries = Channel.CreateUnbounded<LogEntry>(
             new UnboundedChannelOptions
             {
@@ -49,7 +59,15 @@ public sealed class RollingFileLoggerProvider :
         }
 
         _entries.Writer.TryComplete();
-        await _writerTask.ConfigureAwait(false);
+        try
+        {
+            await _writerTask.ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            Trace.WriteLine($"日志写入任务退出异常：{exception}");
+        }
+
         GC.SuppressFinalize(this);
     }
 
@@ -80,15 +98,28 @@ public sealed class RollingFileLoggerProvider :
     {
         await foreach (var entry in _entries.Reader.ReadAllAsync())
         {
-            var path = Path.Combine(
-                _logDirectory,
-                $"ImageToolkit-{entry.Timestamp:yyyyMMdd}.log");
-            var line = Format(entry);
-            await File.AppendAllTextAsync(
-                path,
-                line,
-                new UTF8Encoding(false)).ConfigureAwait(false);
-            DeleteExpiredLogs();
+            try
+            {
+                var path = Path.Combine(
+                    _logDirectory,
+                    $"ImageToolkit-{entry.Timestamp:yyyyMMdd}.log");
+                var line = Format(entry);
+                await File.AppendAllTextAsync(
+                    path,
+                    line,
+                    new UTF8Encoding(false)).ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                Trace.WriteLine($"日志写入失败，已丢弃当前记录：{exception}");
+                continue;
+            }
+
+            var entryDate = DateOnly.FromDateTime(entry.Timestamp.LocalDateTime);
+            if (_lastCleanupDate != entryDate && TryDeleteExpiredLogs())
+            {
+                _lastCleanupDate = entryDate;
+            }
         }
     }
 
@@ -106,18 +137,28 @@ public sealed class RollingFileLoggerProvider :
         return result;
     }
 
-    private void DeleteExpiredLogs()
+    private bool TryDeleteExpiredLogs()
     {
-        var files = Directory
-            .EnumerateFiles(_logDirectory, "ImageToolkit-*.log")
-            .Select(path => new FileInfo(path))
-            .OrderByDescending(file => file.Name, StringComparer.OrdinalIgnoreCase)
-            .Skip(14)
-            .ToArray();
-
-        foreach (var file in files)
+        try
         {
-            file.Delete();
+            var files = Directory
+                .EnumerateFiles(_logDirectory, "ImageToolkit-*.log")
+                .Select(path => new FileInfo(path))
+                .OrderByDescending(file => file.Name, StringComparer.OrdinalIgnoreCase)
+                .Skip(14)
+                .ToArray();
+
+            foreach (var file in files)
+            {
+                file.Delete();
+            }
+
+            return true;
+        }
+        catch (Exception exception)
+        {
+            Trace.WriteLine($"清理过期日志失败：{exception}");
+            return false;
         }
     }
 

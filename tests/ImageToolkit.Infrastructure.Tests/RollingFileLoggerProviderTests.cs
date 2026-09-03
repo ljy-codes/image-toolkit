@@ -53,11 +53,29 @@ public sealed class RollingFileLoggerProviderTests : IDisposable
         Assert.True(Directory.EnumerateFiles(_directory, "*.log").Count() <= 14);
     }
 
+    [Fact]
+    public async Task Write_failure_does_not_escape_dispose()
+    {
+        var provider = new RollingFileLoggerProvider(_directory);
+        Directory.Delete(_directory, true);
+        await File.WriteAllTextAsync(_directory, "blocks log directory");
+        provider.CreateLogger("test").LogInformation("will fail");
+
+        var exception = await Record.ExceptionAsync(
+            async () => await provider.DisposeAsync());
+
+        Assert.Null(exception);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_directory))
         {
             Directory.Delete(_directory, true);
+        }
+        else if (File.Exists(_directory))
+        {
+            File.Delete(_directory);
         }
     }
 }

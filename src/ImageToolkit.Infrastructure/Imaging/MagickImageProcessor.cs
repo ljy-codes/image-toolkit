@@ -171,11 +171,19 @@ public sealed class MagickImageProcessor : IImageProcessor
         Exception exception)
     {
         var modelMissing = exception is FileNotFoundException;
+        var subjectNotFound = exception is InvalidDataException &&
+            exception.Message.Contains(
+                "未识别到",
+                StringComparison.Ordinal);
         var message = modelMissing
             ? $"{exception.Message} 本次未生成输出文件，原图保持不变。"
             : $"AI 抠图未完成：{exception.Message} 本次未生成输出文件，原图保持不变。";
         return new ImageProcessingStageException(
-            modelMissing ? "ai.model-missing" : "ai.inference-failed",
+            modelMissing
+                ? "ai.model-missing"
+                : subjectNotFound
+                    ? "ai.subject-not-found"
+                    : "ai.inference-failed",
             new ProcessingDiagnostic(
                 "AI 模型",
                 message,
@@ -184,6 +192,8 @@ public sealed class MagickImageProcessor : IImageProcessor
                 null,
                 modelMissing
                     ? ["在“AI 抠图”区域安装对应模型。", "确认模型显示“已安装”后重新处理。"]
+                    : subjectNotFound
+                        ? ["选择主体明确、与背景区分较明显的图片。", "全景或纹理图片可关闭 AI 抠图后继续处理。"]
                     : ["重新安装对应 AI 模型。", "关闭 AI 抠图可继续执行普通图片处理。"]),
             exception);
     }
@@ -301,7 +311,16 @@ public sealed class MagickImageProcessor : IImageProcessor
         OutputImageFormat format,
         BackgroundOptions background)
     {
-        if (format != OutputImageFormat.Jpeg || !image.HasAlpha)
+        if (!image.HasAlpha)
+        {
+            return;
+        }
+
+        var usesSolidBackground = background.Mode is
+            BackgroundMode.White or
+            BackgroundMode.Black or
+            BackgroundMode.Custom;
+        if (!usesSolidBackground && format != OutputImageFormat.Jpeg)
         {
             return;
         }

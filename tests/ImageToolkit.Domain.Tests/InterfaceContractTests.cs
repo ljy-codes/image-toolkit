@@ -109,6 +109,19 @@ public sealed class InterfaceContractTests
             CancellationToken cancellationToken) =>
             Task.CompletedTask;
 
+        public Task<AiModelStatus> IdentifyLocalModelAsync(
+            string sourcePath,
+            IProgress<double>? progress,
+            CancellationToken cancellationToken) =>
+            GetStatusAsync("test", cancellationToken);
+
+        public Task ImportLocalModelAsync(
+            string modelId,
+            string sourcePath,
+            IProgress<double>? progress,
+            CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
         public Task RemoveModelAsync(
             string modelId,
             CancellationToken cancellationToken) =>

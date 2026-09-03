@@ -7,6 +7,43 @@ namespace ImageToolkit.Application.Tests;
 public sealed class BatchTaskCoordinatorTests
 {
     [Fact]
+    public async Task Processing_does_not_run_on_calling_synchronization_context()
+    {
+        var callerContext = new SynchronizationContext();
+        SynchronizationContext? observedContext = callerContext;
+        var coordinator = new BatchTaskCoordinator((item, _, _) =>
+        {
+            observedContext = SynchronizationContext.Current;
+            return Task.FromResult(
+                ImageProcessingResult.Completed(
+                    item.SourcePath,
+                    item.SourcePath + ".out",
+                    1));
+        });
+
+        var previousContext = SynchronizationContext.Current;
+        Task<BatchSummary> run;
+        try
+        {
+            SynchronizationContext.SetSynchronizationContext(callerContext);
+            run = coordinator.RunAsync(
+                [BatchItem.Waiting("1.jpg")],
+                ProcessingRequest.Default,
+                1,
+                null,
+                CancellationToken.None);
+        }
+        finally
+        {
+            SynchronizationContext.SetSynchronizationContext(previousContext);
+        }
+
+        await run;
+
+        Assert.Null(observedContext);
+    }
+
+    [Fact]
     public async Task One_failure_does_not_stop_remaining_items()
     {
         var processed = new List<string>();

@@ -58,6 +58,49 @@ public sealed class MagickImageProcessorTests : IDisposable
     }
 
     [Fact]
+    public void Removing_icc_converts_to_srgb_when_enabled()
+    {
+        using var image = new MagickImage(new MagickColor("#7F3FBF"), 1, 1);
+        image.SetProfile(ColorProfiles.AdobeRGB1998);
+        var options = ProcessingRequest.Default.Metadata with
+        {
+            PreserveIccProfile = false,
+            ConvertToSrgbWhenIccCannotBePreserved = true
+        };
+        using var expected = image.Clone();
+        expected.TransformColorSpace(ColorProfiles.SRGB);
+        var expectedColor = expected.GetPixels().GetPixel(0, 0).ToColor();
+
+        new MagickMetadataProcessor().ApplyOutputMetadata(image, options);
+
+        Assert.Null(image.GetColorProfile());
+        Assert.Equal(ColorSpace.sRGB, image.ColorSpace);
+        Assert.Equal(
+            expectedColor,
+            image.GetPixels().GetPixel(0, 0).ToColor());
+    }
+
+    [Fact]
+    public void Removing_icc_does_not_convert_pixels_when_disabled()
+    {
+        using var image = new MagickImage(new MagickColor("#7F3FBF"), 1, 1);
+        image.SetProfile(ColorProfiles.AdobeRGB1998);
+        var originalColor = image.GetPixels().GetPixel(0, 0).ToColor();
+        var options = ProcessingRequest.Default.Metadata with
+        {
+            PreserveIccProfile = false,
+            ConvertToSrgbWhenIccCannotBePreserved = false
+        };
+
+        new MagickMetadataProcessor().ApplyOutputMetadata(image, options);
+
+        Assert.Null(image.GetColorProfile());
+        Assert.Equal(
+            originalColor,
+            image.GetPixels().GetPixel(0, 0).ToColor());
+    }
+
+    [Fact]
     public async Task Transparent_jpeg_request_is_written_as_png()
     {
         var source = TestImages.CreateTransparentPng(_directory);
@@ -83,6 +126,38 @@ public sealed class MagickImageProcessorTests : IDisposable
         using var image = new MagickImage(result.OutputPath!);
         Assert.Equal(MagickFormat.Png, image.Format);
         Assert.True(image.HasAlpha);
+    }
+
+    [Fact]
+    public async Task Solid_background_is_flattened_even_when_output_is_png()
+    {
+        var source = TestImages.CreateTransparentPng(_directory);
+        var output = ReserveOutput("white-background.png");
+        var request = ProcessingRequest.Default with
+        {
+            Compression = ProcessingRequest.Default.Compression with
+            {
+                Enabled = false
+            },
+            Background = ProcessingRequest.Default.Background with
+            {
+                Mode = BackgroundMode.White
+            },
+            Output = ProcessingRequest.Default.Output with
+            {
+                Format = OutputImageFormat.Png
+            }
+        };
+        var processor = CreateProcessor();
+
+        await processor.ProcessAsync(
+            source,
+            output,
+            request,
+            CancellationToken.None);
+
+        using var image = new MagickImage(output);
+        Assert.False(image.HasAlpha);
     }
 
     [Fact]
@@ -227,6 +302,48 @@ public sealed class MagickImageProcessorTests : IDisposable
         Assert.NotEmpty(result.Diagnostic?.Suggestions ?? []);
         Assert.True(File.Exists(source));
         Assert.False(File.Exists(Path.Combine(_directory, "ai-source-已处理.png")));
+    }
+
+    [Fact]
+    public async Task Missing_ai_subject_returns_clear_reason_and_does_not_write_output()
+    {
+        var source = TestImages.CreateJpeg(
+            _directory,
+            fileName: "landscape.jpg",
+            width: 640,
+            height: 480);
+        var request = ProcessingRequest.Default with
+        {
+            AiBackgroundRemoval = ProcessingRequest.Default.AiBackgroundRemoval with
+            {
+                Mode = BackgroundRemovalMode.GeneralObject
+            },
+            Output = ProcessingRequest.Default.Output with
+            {
+                Format = OutputImageFormat.Png
+            }
+        };
+        var processor = new MagickImageProcessor(
+            new AtomicFileWriter(),
+            new MissingSubjectEngine());
+        var pipeline = new ImageProcessingPipeline(
+            new ProcessingRequestValidator(),
+            new OutputPathResolver(),
+            processor);
+
+        var result = await pipeline.ProcessAsync(
+            source,
+            request,
+            CancellationToken.None);
+
+        Assert.Equal(ImageProcessingStatus.Failed, result.Status);
+        Assert.Equal("ai.subject-not-found", result.ErrorCode);
+        Assert.Contains("未识别到明确主体", result.Diagnostic?.UserMessage);
+        Assert.Contains("未生成输出文件", result.Diagnostic?.UserMessage);
+        Assert.Contains(
+            result.Diagnostic?.Suggestions ?? [],
+            suggestion => suggestion.Contains("主体明确"));
+        Assert.False(File.Exists(Path.Combine(_directory, "landscape-已处理.png")));
     }
 
     [Fact]
@@ -378,5 +495,16 @@ public sealed class MagickImageProcessorTests : IDisposable
             BackgroundRemovalMode mode,
             CancellationToken cancellationToken) =>
             throw new FileNotFoundException("尚未安装“人像抠图模型”。");
+    }
+
+    private sealed class MissingSubjectEngine : IBackgroundRemovalEngine
+    {
+        public Task RemoveBackgroundAsync(
+            Stream input,
+            Stream output,
+            BackgroundRemovalMode mode,
+            CancellationToken cancellationToken) =>
+            throw new InvalidDataException(
+                "AI 抠图未识别到明确主体，图片可能是全景、纹理图或主体过于分散。");
     }
 }

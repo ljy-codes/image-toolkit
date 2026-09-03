@@ -10,6 +10,7 @@ using ImageToolkit.Domain.Interfaces;
 using ImageToolkit.Domain.Models;
 using ImageToolkit.Domain.Enums;
 using ImageToolkit.Infrastructure.Config;
+using ImageToolkit.Infrastructure.AI;
 
 namespace ImageToolkit.App.Tests;
 
@@ -88,6 +89,29 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public async Task Active_model_operation_disables_batch_start_and_counts_as_active_work()
+    {
+        var modelManager = new CancellableAiModelManager();
+        var viewModel = CreateViewModel(aiModelManager: modelManager);
+        viewModel.FileQueue.Items.Add(CreateItem("waiting.jpg"));
+
+        Assert.True(viewModel.StartCommand.CanExecute(null));
+
+        var install = viewModel.AiBackgroundRemoval.InstallPortraitCommand
+            .ExecuteAsync(null);
+        await modelManager.Started.Task;
+
+        Assert.True(viewModel.HasActiveWork);
+        Assert.False(viewModel.StartCommand.CanExecute(null));
+
+        await viewModel.AiBackgroundRemoval.CancelActiveInstallAsync();
+        await install;
+
+        Assert.False(viewModel.HasActiveWork);
+        Assert.True(viewModel.StartCommand.CanExecute(null));
+    }
+
+    [Fact]
     public void Queue_item_keeps_folder_import_context()
     {
         var entry = ImageImportEntry.FromFolder(
@@ -136,6 +160,42 @@ public sealed class MainWindowViewModelTests
             [first.SourcePath, second.SourcePath],
             processor.ProcessedPaths.Order(StringComparer.OrdinalIgnoreCase));
         Assert.True(viewModel.HasCompletedBatch);
+    }
+
+    [Fact]
+    public async Task Primary_action_switches_between_start_and_new_batch()
+    {
+        var viewModel = CreateViewModel();
+        viewModel.FileQueue.Items.Add(CreateItem("first.jpg"));
+
+        Assert.True(viewModel.ShowStartAction);
+        Assert.False(viewModel.ShowNewBatchAction);
+
+        await viewModel.StartCommand.ExecuteAsync(null);
+
+        Assert.False(viewModel.ShowStartAction);
+        Assert.True(viewModel.ShowNewBatchAction);
+
+        viewModel.StartNextBatchCommand.Execute(null);
+
+        Assert.True(viewModel.ShowStartAction);
+        Assert.False(viewModel.ShowNewBatchAction);
+    }
+
+    [Fact]
+    public async Task Completed_batch_shows_dismissible_completion_notice()
+    {
+        var viewModel = CreateViewModel();
+        viewModel.FileQueue.Items.Add(CreateItem("done.jpg"));
+
+        await viewModel.StartCommand.ExecuteAsync(null);
+
+        Assert.True(viewModel.IsCompletionNoticeVisible);
+        Assert.Contains("已完成", viewModel.CompletionNoticeText);
+
+        viewModel.DismissCompletionNoticeCommand.Execute(null);
+
+        Assert.False(viewModel.IsCompletionNoticeVisible);
     }
 
     [Fact]
@@ -346,6 +406,28 @@ public sealed class MainWindowViewModelTests
             message => message.Contains("导入失败") && message.Contains("已恢复"));
     }
 
+    [Fact]
+    public async Task Import_failure_keeps_queue_and_shows_message()
+    {
+        var dialogs = new Dialogs();
+        var viewModel = CreateViewModel(
+            dialogs: dialogs,
+            discovery: new FailingDiscovery());
+        var existing = CreateItem("existing.jpg");
+        viewModel.FileQueue.Items.Add(existing);
+
+        await viewModel.AddPathsAsync(
+            [@"C:\images"],
+            true,
+            CancellationToken.None);
+
+        Assert.Equal([existing], viewModel.FileQueue.Items);
+        Assert.Contains(
+            dialogs.Messages,
+            message => message.Contains("导入失败") &&
+                       message.Contains("模拟路径错误"));
+    }
+
     private static ImageQueueItemViewData CreateItem(string fileName) =>
         new(
             $@"C:\images\{fileName}",
@@ -359,13 +441,16 @@ public sealed class MainWindowViewModelTests
         Dialogs? dialogs = null,
         PackageService? packageService = null,
         ConfigurationStore? configurationStore = null,
-        PresetStore? presetStore = null)
+        PresetStore? presetStore = null,
+        IImageFileDiscovery? discovery = null,
+        IAiModelManager? aiModelManager = null)
     {
         var previewUseCase = new BuildPreviewUseCase(new PreviewRenderer());
         var settings = new ProcessingSettingsViewModel();
         presetStore ??= new PresetStore([]);
+        dialogs ??= new Dialogs();
         return new MainWindowViewModel(
-            new ImportImagesUseCase(new Discovery()),
+            new ImportImagesUseCase(discovery ?? new Discovery()),
             new MetadataReader(),
             new ImageProcessingPipeline(
                 new ProcessingRequestValidator(),
@@ -373,7 +458,7 @@ public sealed class MainWindowViewModelTests
                 processor ?? new Processor()),
             new ProcessingRequestValidator(),
             picker ?? new Picker(),
-            dialogs ?? new Dialogs(),
+            dialogs,
             packageService ?? new PackageService(),
             configurationStore ?? new ConfigurationStore(),
             presetStore,
@@ -381,7 +466,10 @@ public sealed class MainWindowViewModelTests
             new ProcessingPresetViewModel(
                 presetStore,
                 settings),
-            new AiBackgroundRemovalViewModel(new AiModelManager()),
+            new AiBackgroundRemovalViewModel(
+                aiModelManager ?? new AiModelManager(),
+                dialogs,
+                picker ?? new Picker()),
             new AppearanceSettingsViewModel(new ThemeServiceStub()),
             new PreviewViewModel(previewUseCase),
             new FileQueueViewModel(),
@@ -395,6 +483,15 @@ public sealed class MainWindowViewModelTests
             bool includeSubdirectories,
             CancellationToken cancellationToken) =>
             Task.FromResult(new ImageImportResult([], []));
+    }
+
+    private sealed class FailingDiscovery : IImageFileDiscovery
+    {
+        public Task<ImageImportResult> DiscoverAsync(
+            IEnumerable<string> inputPaths,
+            bool includeSubdirectories,
+            CancellationToken cancellationToken) =>
+            throw new IOException("模拟路径错误");
     }
 
     private sealed class PresetStore : IProcessingPresetStore
@@ -487,6 +584,67 @@ public sealed class MainWindowViewModelTests
 
         public Task InstallModelAsync(
             string modelId,
+            IProgress<double>? progress,
+            CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public Task<AiModelStatus> IdentifyLocalModelAsync(
+            string sourcePath,
+            IProgress<double>? progress,
+            CancellationToken cancellationToken) =>
+            GetStatusAsync("birefnet-portrait", cancellationToken);
+
+        public Task ImportLocalModelAsync(
+            string modelId,
+            string sourcePath,
+            IProgress<double>? progress,
+            CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public Task RemoveModelAsync(
+            string modelId,
+            CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public Task<string> GetModelPathAsync(
+            string modelId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(modelId);
+    }
+
+    private sealed class CancellableAiModelManager : IAiModelManager
+    {
+        public TaskCompletionSource Started { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task<AiModelStatus> GetStatusAsync(
+            string modelId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new AiModelStatus(
+                modelId,
+                modelId,
+                1024,
+                false,
+                "test"));
+
+        public async Task InstallModelAsync(
+            string modelId,
+            IProgress<double>? progress,
+            CancellationToken cancellationToken)
+        {
+            Started.TrySetResult();
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+        }
+
+        public Task<AiModelStatus> IdentifyLocalModelAsync(
+            string sourcePath,
+            IProgress<double>? progress,
+            CancellationToken cancellationToken) =>
+            GetStatusAsync(AiModelManifest.PortraitModelId, cancellationToken);
+
+        public Task ImportLocalModelAsync(
+            string modelId,
+            string sourcePath,
             IProgress<double>? progress,
             CancellationToken cancellationToken) =>
             Task.CompletedTask;
@@ -599,6 +757,9 @@ public sealed class MainWindowViewModelTests
         public Task<string?> PickConfigurationExportPathAsync(
             string suggestedFileName) =>
             Task.FromResult(ConfigurationExportPath);
+
+        public Task<string?> PickAiModelPathAsync() =>
+            Task.FromResult<string?>(null);
     }
 
     private sealed class Dialogs : IUserDialogService

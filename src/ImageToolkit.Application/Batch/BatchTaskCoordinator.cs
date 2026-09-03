@@ -155,7 +155,9 @@ public sealed class BatchTaskCoordinator
             ImageProcessingResult result;
             try
             {
-                result = await _process(item, request, cancellationToken)
+                result = await Task.Run(
+                        () => _process(item, request, cancellationToken),
+                        cancellationToken)
                     .ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
