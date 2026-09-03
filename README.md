@@ -23,9 +23,9 @@
 
 v1.1.0 Release 提供以下附件：
 
-- Windows 11 x64 自包含安装包。
-- 产品与功能介绍 HTML、PDF。
-- 安装与卸载说明 HTML、PDF。
+- Windows 11 x64 自包含安装包：`SuYingShu-Setup-1.1.0.exe`。
+- 产品与功能介绍：`SuYingShu-Product-Guide.html`、`SuYingShu-Product-Guide.pdf`。
+- 安装与卸载说明：`SuYingShu-Installation-Guide.html`、`SuYingShu-Installation-Guide.pdf`。
 - SHA256 校验信息和版本更新说明。
 
 安装包自包含 .NET 运行环境，普通用户无需额外安装 .NET SDK。
