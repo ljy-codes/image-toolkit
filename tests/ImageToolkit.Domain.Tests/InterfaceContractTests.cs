@@ -86,19 +86,26 @@ public sealed class InterfaceContractTests
         public Task RemoveBackgroundAsync(
             Stream input,
             Stream output,
+            Domain.Enums.BackgroundRemovalMode mode,
             CancellationToken cancellationToken) =>
             Task.CompletedTask;
     }
 
     private sealed class FakeAiModelManager : IAiModelManager
     {
-        public Task<bool> IsModelAvailableAsync(
+        public Task<AiModelStatus> GetStatusAsync(
             string modelId,
             CancellationToken cancellationToken) =>
-            Task.FromResult(false);
+            Task.FromResult(new AiModelStatus(
+                modelId,
+                modelId,
+                0,
+                false,
+                "test"));
 
         public Task InstallModelAsync(
             string modelId,
+            IProgress<double>? progress,
             CancellationToken cancellationToken) =>
             Task.CompletedTask;
 
@@ -106,5 +113,10 @@ public sealed class InterfaceContractTests
             string modelId,
             CancellationToken cancellationToken) =>
             Task.CompletedTask;
+
+        public Task<string> GetModelPathAsync(
+            string modelId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(modelId);
     }
 }

@@ -11,6 +11,7 @@ using ImageToolkit.Application.Processing;
 using ImageToolkit.Domain.Enums;
 using ImageToolkit.Domain.Interfaces;
 using ImageToolkit.Domain.Models;
+using ImageToolkit.Infrastructure.Config;
 
 namespace ImageToolkit.App.ViewModels;
 
@@ -22,10 +23,15 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private readonly ProcessingRequestValidator _validator;
     private readonly IDesktopFilePicker _filePicker;
     private readonly IUserDialogService _dialogs;
+    private readonly IConfigurationPackageService _configurationPackageService;
+    private readonly IConfigurationStore<AppConfiguration> _configurationStore;
+    private readonly IProcessingPresetStore _presetStore;
+    private readonly object _batchStateLock = new();
     private BatchTaskCoordinator? _coordinator;
     private CancellationTokenSource? _batchCancellation;
     private CancellationTokenSource? _previewCancellation;
     private Task? _activeBatchTask;
+    private long _batchVersion;
 
     public MainWindowViewModel(
         ImportImagesUseCase importImages,
@@ -34,7 +40,12 @@ public sealed partial class MainWindowViewModel : ObservableObject
         ProcessingRequestValidator validator,
         IDesktopFilePicker filePicker,
         IUserDialogService dialogs,
+        IConfigurationPackageService configurationPackageService,
+        IConfigurationStore<AppConfiguration> configurationStore,
+        IProcessingPresetStore presetStore,
         ProcessingSettingsViewModel settings,
+        ProcessingPresetViewModel presets,
+        AiBackgroundRemovalViewModel aiBackgroundRemoval,
         AppearanceSettingsViewModel appearance,
         PreviewViewModel preview,
         FileQueueViewModel fileQueue,
@@ -46,7 +57,12 @@ public sealed partial class MainWindowViewModel : ObservableObject
         _validator = validator;
         _filePicker = filePicker;
         _dialogs = dialogs;
+        _configurationPackageService = configurationPackageService;
+        _configurationStore = configurationStore;
+        _presetStore = presetStore;
         Settings = settings;
+        Presets = presets;
+        AiBackgroundRemoval = aiBackgroundRemoval;
         Appearance = appearance;
         Preview = preview;
         FileQueue = fileQueue;
@@ -57,6 +73,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
     }
 
     public ProcessingSettingsViewModel Settings { get; }
+
+    public ProcessingPresetViewModel Presets { get; }
+
+    public AiBackgroundRemovalViewModel AiBackgroundRemoval { get; }
 
     public AppearanceSettingsViewModel Appearance { get; }
 
@@ -81,6 +101,12 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [ObservableProperty]
     private string _pauseButtonText = "暂停";
 
+    [ObservableProperty]
+    private bool _hasCompletedBatch;
+
+    [ObservableProperty]
+    private string? _configurationNotice;
+
     private bool CanStart() => FileQueue.Items.Count > 0 && !IsRunning;
 
     private bool CanEditQueue() => !IsRunning;
@@ -92,6 +118,146 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     private bool CanRetryFailed() =>
         !IsRunning && FileQueue.Items.Any(IsRetryable);
+
+    private bool CanStartNextBatch() => HasCompletedBatch && !IsRunning;
+
+    private bool CanTransferConfiguration() => !IsRunning;
+
+    [RelayCommand(CanExecute = nameof(CanTransferConfiguration))]
+    private async Task ExportConfigurationAsync()
+    {
+        var suggestedFileName =
+            $"苏影枢配置-{DateTime.Now:yyyyMMdd-HHmmss}.syconfig";
+        var path = await _filePicker.PickConfigurationExportPathAsync(
+            suggestedFileName);
+        if (path is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var package = ConfigurationPackage.Create(
+                BuildConfiguration(),
+                Presets.GetUserPresets());
+            await _configurationPackageService.ExportAsync(
+                path,
+                package,
+                CancellationToken.None);
+            ConfigurationNotice =
+                $"配置已导出，包含 {package.Presets.Length} 个命名方案。";
+            _dialogs.ShowMessage(
+                $"{ConfigurationNotice}\n文件：{path}");
+        }
+        catch (Exception exception)
+        {
+            ConfigurationNotice =
+                $"配置导出失败：{exception.Message} 本机原配置未受影响。";
+            _dialogs.ShowMessage(ConfigurationNotice);
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanTransferConfiguration))]
+    private async Task ImportConfigurationAsync()
+    {
+        var path = await _filePicker.PickConfigurationImportPathAsync();
+        if (path is null)
+        {
+            return;
+        }
+
+        ConfigurationPackage package;
+        try
+        {
+            package = await _configurationPackageService.ImportAsync(
+                path,
+                CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            ConfigurationNotice =
+                $"配置导入失败：{exception.Message} 当前配置未发生变化。";
+            _dialogs.ShowMessage(ConfigurationNotice);
+            return;
+        }
+
+        var normalized = NormalizeImportedPackage(package);
+        var validationError = ValidateImportedPackage(normalized.Package);
+        if (validationError is not null)
+        {
+            ConfigurationNotice =
+                $"配置导入失败：{validationError} 当前配置未发生变化。";
+            _dialogs.ShowMessage(ConfigurationNotice);
+            return;
+        }
+
+        if (!_dialogs.Confirm(
+                $"配置包导出时间：{package.ExportedAt:yyyy-MM-dd HH:mm:ss zzz}\n" +
+                $"包含 {package.Presets.Length} 个命名方案。\n" +
+                "导入将覆盖当前处理参数、外观设置和全部命名方案，是否继续？"))
+        {
+            ConfigurationNotice = "已取消配置导入，当前配置未发生变化。";
+            return;
+        }
+
+        var originalConfiguration = BuildConfiguration();
+        var originalPresets = Presets.GetUserPresets();
+        try
+        {
+            await _configurationStore.SaveAsync(
+                normalized.Package.Configuration,
+                CancellationToken.None);
+            await _presetStore.SaveAsync(
+                normalized.Package.Presets,
+                CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            var rollbackError = await TryRestoreConfigurationAsync(
+                originalConfiguration,
+                originalPresets);
+            var rollbackMessage = rollbackError is null
+                ? "已恢复导入前配置。"
+                : $"恢复导入前配置时也发生错误：{rollbackError.Message}";
+            ConfigurationNotice =
+                $"配置导入失败：{exception.Message} {rollbackMessage}";
+            _dialogs.ShowMessage(ConfigurationNotice);
+            return;
+        }
+
+        ApplyConfiguration(normalized.Package.Configuration);
+        Presets.ReplaceImported(normalized.Package.Presets);
+        var pathMessage = normalized.RepairedPathCount == 0
+            ? "所有指定输出目录均可用。"
+            : $"{normalized.RepairedPathCount} 个指定输出目录在本机不存在或不可用，" +
+              "已改为“原目录新文件”，避免处理时写入失败。";
+        ConfigurationNotice =
+            $"配置导入成功，共导入 {normalized.Package.Presets.Length} 个命名方案。" +
+            pathMessage;
+        _dialogs.ShowMessage(ConfigurationNotice);
+    }
+
+    public AppConfiguration BuildConfiguration() =>
+        new(
+            Settings.BuildRequest(),
+            0,
+            Appearance.Theme,
+            IncludeSubdirectories,
+            Appearance.WorkspaceBackground,
+            Appearance.CustomWorkspaceColor,
+            Appearance.FontSize);
+
+    public void ApplyConfiguration(AppConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        Settings.Apply(configuration.Processing);
+        Appearance.Apply(
+            configuration.Theme,
+            configuration.WorkspaceBackground,
+            configuration.CustomWorkspaceColor,
+            configuration.FontSize);
+        IncludeSubdirectories = configuration.IncludeSubdirectories;
+    }
 
     [RelayCommand(CanExecute = nameof(CanEditQueue))]
     private async Task AddFilesAsync()
@@ -145,10 +311,27 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanEditQueue))]
     private void ClearQueue()
     {
-        FileQueue.Items.Clear();
-        FileQueue.SelectedItem = null;
-        Preview.Clear();
-        Progress.Reset(0);
+        ResetBatchState();
+        HasCompletedBatch = false;
+    }
+
+    [RelayCommand(CanExecute = nameof(CanStartNextBatch))]
+    private void StartNextBatch()
+    {
+        ResetBatchState();
+        HasCompletedBatch = false;
+    }
+
+    private void ResetBatchState()
+    {
+        lock (_batchStateLock)
+        {
+            Interlocked.Increment(ref _batchVersion);
+            FileQueue.Items.Clear();
+            FileQueue.SelectedItem = null;
+            Preview.Clear();
+            Progress.Reset(0);
+        }
     }
 
     [RelayCommand(CanExecute = nameof(CanStart))]
@@ -210,6 +393,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
         IsRunning = true;
         IsPaused = false;
+        HasCompletedBatch = false;
+        _previewCancellation?.Cancel();
+        var batchVersion = Interlocked.Increment(ref _batchVersion);
         _batchCancellation = new CancellationTokenSource();
         Progress.Reset(itemsToRun.Count);
         foreach (var item in itemsToRun)
@@ -223,24 +409,35 @@ public sealed partial class MainWindowViewModel : ObservableObject
             StringComparer.OrdinalIgnoreCase);
         _coordinator = new BatchTaskCoordinator(
             (item, snapshot, token) =>
-                _pipeline.ProcessAsync(item.SourcePath, snapshot, token));
+                _pipeline.ProcessAsync(
+                    lookup[item.SourcePath].ImportEntry,
+                    snapshot,
+                    token));
         var progress = new Progress<BatchItem>(item =>
         {
-            if (!lookup.TryGetValue(item.SourcePath, out var viewData))
+            lock (_batchStateLock)
             {
-                return;
-            }
+                if (batchVersion != Volatile.Read(ref _batchVersion))
+                {
+                    return;
+                }
 
-            viewData.Status = ToChineseStatus(item.Status);
-            viewData.OutputPath = item.Result?.OutputPath;
-            viewData.ResultDetails = FormatResultDetails(item.Result);
-            viewData.Message = item.Result?.Message;
-            if (item.Status != BatchItemStatus.Processing)
-            {
-                Progress.Advance();
-            }
+                if (!lookup.TryGetValue(item.SourcePath, out var viewData))
+                {
+                    return;
+                }
 
-            RetryFailedCommand.NotifyCanExecuteChanged();
+                viewData.Status = ToChineseStatus(item.Status);
+                viewData.OutputPath = item.Result?.OutputPath;
+                viewData.ResultDetails = FormatResultDetails(item.Result);
+                viewData.Message = item.Result?.Message;
+                if (item.Status != BatchItemStatus.Processing)
+                {
+                    Progress.Advance();
+                }
+
+                RetryFailedCommand.NotifyCanExecuteChanged();
+            }
         });
 
         try
@@ -262,10 +459,12 @@ public sealed partial class MainWindowViewModel : ObservableObject
         {
             IsRunning = false;
             IsPaused = false;
+            HasCompletedBatch = true;
             PauseButtonText = "暂停";
             _batchCancellation.Dispose();
             _batchCancellation = null;
             _coordinator = null;
+            RefreshPreview();
         }
     }
 
@@ -314,12 +513,18 @@ public sealed partial class MainWindowViewModel : ObservableObject
             paths,
             includeSubdirectories,
             cancellationToken);
+        if (result.Entries.Count > 0 && HasCompletedBatch)
+        {
+            StartNextBatch();
+        }
+
         var existing = FileQueue.Items
             .Select(item => item.SourcePath)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var path in result.Files)
+        foreach (var entry in result.Entries)
         {
+            var path = entry.SourcePath;
             if (!existing.Add(path))
             {
                 continue;
@@ -332,7 +537,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
                     metadata.SourcePath,
                     metadata.FileName,
                     $"{metadata.PixelSize.Width} × {metadata.PixelSize.Height}",
-                    FormatFileSize(metadata.SizeBytes)));
+                    FormatFileSize(metadata.SizeBytes),
+                    entry));
             }
             catch (Exception exception)
             {
@@ -401,10 +607,33 @@ public sealed partial class MainWindowViewModel : ObservableObject
             return;
         }
 
-        _ = Preview.UpdateAsync(
+        if (IsRunning)
+        {
+            return;
+        }
+
+        _ = RefreshPreviewAfterDelayAsync(
             selected.SourcePath,
             Settings.BuildRequest(),
             _previewCancellation.Token);
+    }
+
+    private async Task RefreshPreviewAfterDelayAsync(
+        string sourcePath,
+        ProcessingRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(250, cancellationToken);
+            if (!IsRunning)
+            {
+                await Preview.UpdateAsync(sourcePath, request, cancellationToken);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
     }
 
     private void NotifyCommandStates()
@@ -416,9 +645,174 @@ public sealed partial class MainWindowViewModel : ObservableObject
         RemoveSelectedCommand.NotifyCanExecuteChanged();
         RetryFailedCommand.NotifyCanExecuteChanged();
         ClearQueueCommand.NotifyCanExecuteChanged();
+        StartNextBatchCommand.NotifyCanExecuteChanged();
         PauseResumeCommand.NotifyCanExecuteChanged();
         CancelCommand.NotifyCanExecuteChanged();
+        ImportConfigurationCommand.NotifyCanExecuteChanged();
+        ExportConfigurationCommand.NotifyCanExecuteChanged();
     }
+
+    private string? ValidateImportedPackage(ConfigurationPackage package)
+    {
+        var configuration = package.Configuration;
+        if (configuration.Theme is not ("System" or "Light" or "Dark"))
+        {
+            return $"主题值“{configuration.Theme}”无效。";
+        }
+
+        if (configuration.WorkspaceBackground is not (
+                "System" or
+                "White" or
+                "LightGray" or
+                "DarkGray" or
+                "Black" or
+                "Custom"))
+        {
+            return $"工作区背景值“{configuration.WorkspaceBackground}”无效。";
+        }
+
+        if (configuration.FontSize is not (12d or 14d or 16d or 18d))
+        {
+            return $"字体大小 {configuration.FontSize} 无效。";
+        }
+
+        if (configuration.WorkspaceBackground == "Custom" &&
+            !IsValidColor(configuration.CustomWorkspaceColor))
+        {
+            return "自定义背景色无效，请使用有效的颜色值。";
+        }
+
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var preset in package.Presets)
+        {
+            if (preset is null)
+            {
+                return "命名方案中存在空项目。";
+            }
+
+            var name = preset.Name?.Trim();
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return "命名方案名称不能为空。";
+            }
+
+            if (string.Equals(
+                    name,
+                    ProcessingPresetViewModel.DefaultPresetName,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return $"“{ProcessingPresetViewModel.DefaultPresetName}”是保留名称。";
+            }
+
+            if (!names.Add(name))
+            {
+                return $"命名方案“{name}”重复。";
+            }
+
+            var presetValidation = _validator.Validate(preset.Request);
+            if (!presetValidation.IsValid)
+            {
+                return $"命名方案“{name}”无效：{presetValidation.Errors[0].Message}";
+            }
+        }
+
+        var configurationValidation = _validator.Validate(
+            package.Configuration.Processing);
+        return configurationValidation.IsValid
+            ? null
+            : $"当前处理参数无效：{configurationValidation.Errors[0].Message}";
+    }
+
+    private static bool IsValidColor(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        try
+        {
+            return System.Windows.Media.ColorConverter.ConvertFromString(value)
+                   is System.Windows.Media.Color;
+        }
+        catch (Exception exception)
+            when (exception is FormatException or NotSupportedException)
+        {
+            return false;
+        }
+    }
+
+    private static NormalizedConfigurationPackage NormalizeImportedPackage(
+        ConfigurationPackage package)
+    {
+        var repairedPathCount = 0;
+        var configuration = package.Configuration with
+        {
+            Processing = NormalizeOutputPath(
+                package.Configuration.Processing,
+                ref repairedPathCount)
+        };
+        var presets = package.Presets
+            .Select(preset => preset with
+            {
+                Name = preset.Name.Trim(),
+                Request = NormalizeOutputPath(
+                    preset.Request,
+                    ref repairedPathCount)
+            })
+            .ToArray();
+        return new NormalizedConfigurationPackage(
+            package with
+            {
+                Configuration = configuration,
+                Presets = presets
+            },
+            repairedPathCount);
+    }
+
+    private static ProcessingRequest NormalizeOutputPath(
+        ProcessingRequest request,
+        ref int repairedPathCount)
+    {
+        if (request.Output.Mode != OutputMode.SpecificDirectory ||
+            (!string.IsNullOrWhiteSpace(request.Output.DirectoryPath) &&
+             Directory.Exists(request.Output.DirectoryPath)))
+        {
+            return request;
+        }
+
+        repairedPathCount++;
+        return request with
+        {
+            Output = request.Output with
+            {
+                Mode = OutputMode.SourceDirectory,
+                DirectoryPath = null
+            }
+        };
+    }
+
+    private async Task<Exception?> TryRestoreConfigurationAsync(
+        AppConfiguration configuration,
+        IReadOnlyList<ProcessingPreset> presets)
+    {
+        try
+        {
+            await _configurationStore.SaveAsync(
+                configuration,
+                CancellationToken.None);
+            await _presetStore.SaveAsync(presets, CancellationToken.None);
+            return null;
+        }
+        catch (Exception exception)
+        {
+            return exception;
+        }
+    }
+
+    private sealed record NormalizedConfigurationPackage(
+        ConfigurationPackage Package,
+        int RepairedPathCount);
 
     private static string ToChineseStatus(BatchItemStatus status) =>
         status switch
@@ -439,6 +833,21 @@ public sealed partial class MainWindowViewModel : ObservableObject
         if (result is null)
         {
             return null;
+        }
+
+        if (result.Status is ImageProcessingStatus.Unmet or ImageProcessingStatus.Failed)
+        {
+            var diagnostic = result.Diagnostic;
+            if (diagnostic is null)
+            {
+                return result.Message ?? "处理失败。";
+            }
+
+            var suggestions = diagnostic.Suggestions.Count > 0
+                ? $" 建议：{string.Join("；", diagnostic.Suggestions)}"
+                : string.Empty;
+            return
+                $"失败环节：{diagnostic.Stage}。{diagnostic.UserMessage}{suggestions}";
         }
 
         var parts = new List<string>();

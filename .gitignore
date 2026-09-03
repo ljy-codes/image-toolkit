@@ -6,9 +6,11 @@ obj/
 *.suo
 TestResults/
 artifacts/
+gcm-diagnose.log
 .worktrees/
 .dotnet-home/
 .nuget/
+/tmp/
 *.tmp
 *.bak
 /测试图/

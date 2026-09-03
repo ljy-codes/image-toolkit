@@ -52,3 +52,20 @@ This product includes or depends on the following software:
     Copyright Zhenghan Yang (Kira).
     License: MIT
     https://github.com/kira-96/Inno-Setup-Chinese-Simplified-Translation
+
+11. Microsoft.ML.OnnxRuntime 1.23.2
+    Copyright Microsoft Corporation.
+    License: MIT
+    https://github.com/microsoft/onnxruntime/blob/main/LICENSE
+
+Optional AI model notice
+------------------------
+
+The base installer does not include AI model files. When requested by the user,
+the application downloads U-2-Net-compatible ONNX weights to the local computer.
+The upstream U-2-Net project is licensed under Apache License 2.0. The ONNX
+files are hosted by the MIT-licensed rembg project and are not redistributed
+with this product or attached to its releases. The rembg release artifacts do
+not contain a separate provenance attestation for the converted files; see
+docs/licenses/AI-MODELS.md for the reviewed sources, hashes, release decision,
+and remaining limitation.

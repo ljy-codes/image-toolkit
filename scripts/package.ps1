@@ -9,6 +9,8 @@ $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $publishScript = Join-Path $PSScriptRoot 'publish.ps1'
 $installerScript = Join-Path $root 'installer\ImageToolkit.iss'
 $output = Join-Path $root 'artifacts\installer'
+$artifactsRoot = [IO.Path]::GetFullPath((Join-Path $root 'artifacts'))
+$staging = Join-Path $artifactsRoot "installer-staging-$PID"
 
 & $publishScript -Configuration $Configuration
 
@@ -28,26 +30,43 @@ if (-not $iscc) {
     throw 'Inno Setup 6 was not found. Install it and run package.ps1 again.'
 }
 
-New-Item -ItemType Directory -Force -Path $output | Out-Null
-$arguments = @(
-    "/DMyAppVersion=$Version",
-    "/DSourceRoot=$root",
-    "/DPublishDir=$(Join-Path $root 'artifacts\publish\win-x64')",
-    "/DInstallerOutput=$output"
-)
-if ($SignToolCommand) {
-    $arguments += "/DSignToolCommand=$SignToolCommand"
-}
-$arguments += $installerScript
+try {
+    New-Item -ItemType Directory -Force -Path $staging | Out-Null
+    $arguments = @(
+        "/DMyAppVersion=$Version",
+        "/DSourceRoot=$root",
+        "/DPublishDir=$(Join-Path $root 'artifacts\publish\win-x64')",
+        "/DInstallerOutput=$staging"
+    )
+    if ($SignToolCommand) {
+        $arguments += "/DSignToolCommand=$SignToolCommand"
+    }
+    $arguments += $installerScript
 
-& $iscc @arguments
-if ($LASTEXITCODE -ne 0) {
-    throw "Inno Setup compilation failed with exit code $LASTEXITCODE."
-}
+    & $iscc @arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "Inno Setup compilation failed with exit code $LASTEXITCODE."
+    }
 
-$setup = Join-Path $output 'ImageToolkitSetup.exe'
-if (-not (Test-Path -LiteralPath $setup)) {
-    throw "Installer was not generated: $setup"
-}
+    $stagedSetup = Join-Path $staging 'ImageToolkitSetup.exe'
+    if (-not (Test-Path -LiteralPath $stagedSetup)) {
+        throw "Installer was not generated: $stagedSetup"
+    }
 
-Write-Host "Installer completed: $setup"
+    New-Item -ItemType Directory -Force -Path $output | Out-Null
+    $setup = Join-Path $output 'ImageToolkitSetup.exe'
+    Copy-Item -LiteralPath $stagedSetup -Destination $setup -Force
+    Write-Host "Installer completed: $setup"
+}
+finally {
+    if (Test-Path -LiteralPath $staging) {
+        $resolvedStaging = (Resolve-Path -LiteralPath $staging).Path
+        if (-not $resolvedStaging.StartsWith(
+            $artifactsRoot,
+            [StringComparison]::OrdinalIgnoreCase)) {
+            throw "Refusing to clean a path outside the repository artifacts directory: $resolvedStaging"
+        }
+
+        Remove-Item -LiteralPath $resolvedStaging -Recurse -Force
+    }
+}

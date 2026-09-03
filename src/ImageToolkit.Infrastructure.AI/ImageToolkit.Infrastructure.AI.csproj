@@ -5,6 +5,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Magick.NET-Q8-x64" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\ImageToolkit.Domain\ImageToolkit.Domain.csproj" />
   </ItemGroup>
 

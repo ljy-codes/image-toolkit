@@ -34,4 +34,14 @@ public sealed class ProcessingRequestTests
         Assert.Equal(1_048_576, original.Compression.TargetBytes);
         Assert.Equal(500_000, changed.Compression.TargetBytes);
     }
+
+    [Fact]
+    public void Processing_preset_displays_its_name()
+    {
+        var preset = new ProcessingPreset(
+            "电商图片",
+            ProcessingRequest.Default);
+
+        Assert.Equal("电商图片", preset.ToString());
+    }
 }

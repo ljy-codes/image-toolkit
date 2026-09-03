@@ -10,6 +10,7 @@ namespace ImageToolkit.App.ViewModels;
 public sealed partial class PreviewViewModel : ObservableObject
 {
     private readonly BuildPreviewUseCase _buildPreview;
+    private readonly SemaphoreSlim _renderGate = new(1, 1);
     private long _requestVersion;
 
     public PreviewViewModel(BuildPreviewUseCase buildPreview)
@@ -36,8 +37,11 @@ public sealed partial class PreviewViewModel : ObservableObject
     {
         var version = Interlocked.Increment(ref _requestVersion);
         IsLoading = true;
+        var lockTaken = false;
         try
         {
+            await _renderGate.WaitAsync(cancellationToken);
+            lockTaken = true;
             var original = await Task.Run(
                 () => LoadBitmap(sourcePath),
                 cancellationToken);
@@ -68,6 +72,11 @@ public sealed partial class PreviewViewModel : ObservableObject
         }
         finally
         {
+            if (lockTaken)
+            {
+                _renderGate.Release();
+            }
+
             if (version == Volatile.Read(ref _requestVersion))
             {
                 IsLoading = false;

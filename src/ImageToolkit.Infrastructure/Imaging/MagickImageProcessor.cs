@@ -9,12 +9,16 @@ namespace ImageToolkit.Infrastructure.Imaging;
 public sealed class MagickImageProcessor : IImageProcessor
 {
     private readonly IAtomicFileWriter _fileWriter;
+    private readonly IBackgroundRemovalEngine? _backgroundRemovalEngine;
     private readonly MagickMetadataProcessor _metadata = new();
     private readonly MagickCompressionEncoder _encoder = new();
 
-    public MagickImageProcessor(IAtomicFileWriter fileWriter)
+    public MagickImageProcessor(
+        IAtomicFileWriter fileWriter,
+        IBackgroundRemovalEngine? backgroundRemovalEngine = null)
     {
         _fileWriter = fileWriter ?? throw new ArgumentNullException(nameof(fileWriter));
+        _backgroundRemovalEngine = backgroundRemovalEngine;
     }
 
     public async Task<ImageProcessingResult> ProcessAsync(
@@ -29,66 +33,201 @@ public sealed class MagickImageProcessor : IImageProcessor
         cancellationToken.ThrowIfCancellationRequested();
 
         EnsureOverwriteIsSafe(sourcePath, request);
-        using var image = new MagickImage(sourcePath);
-        _metadata.ApplyInputOrientation(image);
-        ApplyAspectRatio(image, request.AspectRatio, request.Background);
-        ApplyResize(image, request.Resize);
-
-        var format = request.Output.Format == OutputImageFormat.Original
-            ? ResolveFormat(outputPath)
-            : request.Output.Format;
-        ResolveTransparency(image, format, request.Background);
-        _metadata.ApplyOutputMetadata(image, request.Metadata);
-        var encoded = await _encoder.EncodeAsync(
-            image,
-            format,
-            request,
-            cancellationToken).ConfigureAwait(false);
-
-        Func<Stream, Task> write = stream =>
-            stream.WriteAsync(encoded.Bytes, CancellationToken.None).AsTask();
-        Func<string, Task<bool>> validate = ValidateOutputAsync;
-
-        if (request.Output.Mode == OutputMode.OverwriteOriginal)
+        using var sourceImage = new MagickImage(sourcePath);
+        _metadata.ApplyInputOrientation(sourceImage);
+        MagickImage? aiImage = null;
+        var image = sourceImage;
+        if (request.AiBackgroundRemoval.Mode != BackgroundRemovalMode.Disabled)
         {
-            await _fileWriter.ReplaceAsync(
-                outputPath,
-                write,
-                validate,
+            aiImage = await RemoveBackgroundAsync(
+                sourceImage,
+                request.AiBackgroundRemoval.Mode,
                 cancellationToken).ConfigureAwait(false);
-        }
-        else
-        {
-            await _fileWriter.WriteNewAsync(
-                outputPath,
-                write,
-                validate,
-                cancellationToken).ConfigureAwait(false);
+            image = aiImage;
         }
 
-        if (!encoded.ReachedTarget)
+        try
         {
-            return new ImageProcessingResult(
+            ApplyAspectRatio(image, request.AspectRatio, request.Background);
+            ApplyResize(image, request.Resize);
+
+            var format = request.Output.Format == OutputImageFormat.Original
+                ? ResolveFormat(outputPath)
+                : request.Output.Format;
+            ResolveTransparency(image, format, request.Background);
+            _metadata.ApplyOutputMetadata(image, request.Metadata);
+            var encoded = await _encoder.EncodeAsync(
+                image,
+                format,
+                request,
+                cancellationToken).ConfigureAwait(false);
+
+            if (!encoded.ReachedTarget)
+            {
+                DeleteEmptyReservation(outputPath);
+                var targetText = FormatFileSize(request.Compression.TargetBytes);
+                var bestText = FormatFileSize(encoded.Bytes.LongLength);
+                var message =
+                    $"未达到目标大小。目标为 {targetText}，最低可达 {bestText}。本次未生成输出文件，原图保持不变。";
+                return ImageProcessingResult.Unmet(
+                    sourcePath,
+                    encoded.Bytes.LongLength,
+                    encoded.FinalSize,
+                    message,
+                    new ProcessingDiagnostic(
+                        "压缩",
+                        message,
+                        "编码搜索已达到当前允许的画质、尺寸或格式下限。",
+                        request.Compression.TargetBytes,
+                        encoded.Bytes.LongLength,
+                        BuildCompressionSuggestions(format, request)),
+                    encoded.Quality,
+                    encoded.UsedAutomaticResize,
+                    encoded.UsedPngQuantization);
+            }
+
+            Func<Stream, Task> write = stream =>
+                stream.WriteAsync(encoded.Bytes, CancellationToken.None).AsTask();
+            Func<string, Task<bool>> validate = ValidateOutputAsync;
+
+            if (request.Output.Mode == OutputMode.OverwriteOriginal)
+            {
+                await _fileWriter.ReplaceAsync(
+                    outputPath,
+                    write,
+                    validate,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await _fileWriter.WriteNewAsync(
+                    outputPath,
+                    write,
+                    validate,
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            return ImageProcessingResult.Completed(
                 sourcePath,
                 outputPath,
-                ImageProcessingStatus.Unmet,
                 encoded.Bytes.LongLength,
                 encoded.FinalSize,
                 encoded.Quality,
                 encoded.UsedAutomaticResize,
-                encoded.UsedPngQuantization,
-                "compression.target-unmet",
-                "已达到画质或尺寸下限，仍未达到目标文件大小。");
+                encoded.UsedPngQuantization);
+        }
+        finally
+        {
+            aiImage?.Dispose();
+        }
+    }
+
+    private async Task<MagickImage> RemoveBackgroundAsync(
+        MagickImage image,
+        BackgroundRemovalMode mode,
+        CancellationToken cancellationToken)
+    {
+        if (_backgroundRemovalEngine is null)
+        {
+            throw new InvalidOperationException(
+                "AI 抠图组件未加载，请重新安装应用或关闭 AI 抠图。");
         }
 
-        return ImageProcessingResult.Completed(
-            sourcePath,
-            outputPath,
-            encoded.Bytes.LongLength,
-            encoded.FinalSize,
-            encoded.Quality,
-            encoded.UsedAutomaticResize,
-            encoded.UsedPngQuantization);
+        using var input = new MemoryStream();
+        image.Format = MagickFormat.Png;
+        image.Write(input);
+        input.Position = 0;
+        using var output = new MemoryStream();
+        try
+        {
+            await _backgroundRemovalEngine.RemoveBackgroundAsync(
+                    input,
+                    output,
+                    mode,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            throw CreateAiException(exception);
+        }
+
+        output.Position = 0;
+        try
+        {
+            return new MagickImage(output);
+        }
+        catch (Exception exception)
+        {
+            throw CreateAiException(exception);
+        }
+    }
+
+    private static ImageProcessingStageException CreateAiException(
+        Exception exception)
+    {
+        var modelMissing = exception is FileNotFoundException;
+        var message = modelMissing
+            ? $"{exception.Message} 本次未生成输出文件，原图保持不变。"
+            : $"AI 抠图未完成：{exception.Message} 本次未生成输出文件，原图保持不变。";
+        return new ImageProcessingStageException(
+            modelMissing ? "ai.model-missing" : "ai.inference-failed",
+            new ProcessingDiagnostic(
+                "AI 模型",
+                message,
+                exception.ToString(),
+                null,
+                null,
+                modelMissing
+                    ? ["在“AI 抠图”区域安装对应模型。", "确认模型显示“已安装”后重新处理。"]
+                    : ["重新安装对应 AI 模型。", "关闭 AI 抠图可继续执行普通图片处理。"]),
+            exception);
+    }
+
+    private static IReadOnlyList<string> BuildCompressionSuggestions(
+        OutputImageFormat format,
+        ProcessingRequest request)
+    {
+        var suggestions = new List<string>();
+        if (!request.Compression.AllowAutomaticResize)
+        {
+            suggestions.Add("允许自动缩小图片尺寸。");
+        }
+
+        if (format == OutputImageFormat.Png &&
+            !request.Compression.AllowPngQuantization)
+        {
+            suggestions.Add("启用 PNG 颜色量化。");
+        }
+
+        if (format is OutputImageFormat.Png or OutputImageFormat.Bmp or OutputImageFormat.Tiff)
+        {
+            suggestions.Add("转换为 JPEG 或 WebP。");
+        }
+
+        if (suggestions.Count == 0)
+        {
+            suggestions.Add("提高目标文件大小，或手动降低输出尺寸。");
+        }
+
+        return suggestions;
+    }
+
+    private static string FormatFileSize(long bytes) =>
+        bytes >= 1024 * 1024
+            ? $"{bytes / 1024d / 1024d:F2} MB"
+            : $"{Math.Max(1, bytes / 1024d):F0} KB";
+
+    private static void DeleteEmptyReservation(string path)
+    {
+        if (File.Exists(path) && new FileInfo(path).Length == 0)
+        {
+            File.Delete(path);
+        }
     }
 
     private static void EnsureOverwriteIsSafe(

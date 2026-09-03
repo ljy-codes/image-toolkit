@@ -219,7 +219,7 @@ public sealed class BatchTaskCoordinator
     private static int ResolveWorkerCount(int workerCount) =>
         workerCount switch
         {
-            0 => Math.Clamp(Environment.ProcessorCount / 2, 1, 4),
+            0 => Math.Clamp(Environment.ProcessorCount / 2, 1, 2),
             1 or 2 or 4 => workerCount,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(workerCount),
@@ -232,6 +232,7 @@ public sealed class BatchTaskCoordinator
             Compression = request.Compression with { },
             Resize = request.Resize with { },
             AspectRatio = request.AspectRatio with { },
+            AiBackgroundRemoval = request.AiBackgroundRemoval with { },
             Background = request.Background with { },
             Metadata = request.Metadata with { },
             Output = request.Output with { }

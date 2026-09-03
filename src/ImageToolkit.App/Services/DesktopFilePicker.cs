@@ -7,6 +7,10 @@ public interface IDesktopFilePicker
     Task<IReadOnlyList<string>> PickFilesAsync();
 
     Task<string?> PickFolderAsync();
+
+    Task<string?> PickConfigurationImportPathAsync();
+
+    Task<string?> PickConfigurationExportPathAsync(string suggestedFileName);
 }
 
 public sealed class DesktopFilePicker : IDesktopFilePicker
@@ -34,6 +38,36 @@ public sealed class DesktopFilePicker : IDesktopFilePicker
         };
         return Task.FromResult(dialog.ShowDialog() == true
             ? dialog.FolderName
+            : null);
+    }
+
+    public Task<string?> PickConfigurationImportPathAsync()
+    {
+        var dialog = new OpenFileDialog
+        {
+            Multiselect = false,
+            Title = "导入苏影枢配置",
+            Filter = "苏影枢配置包|*.syconfig|所有文件|*.*",
+            DefaultExt = ".syconfig"
+        };
+        return Task.FromResult(dialog.ShowDialog() == true
+            ? dialog.FileName
+            : null);
+    }
+
+    public Task<string?> PickConfigurationExportPathAsync(string suggestedFileName)
+    {
+        var dialog = new SaveFileDialog
+        {
+            Title = "导出苏影枢配置",
+            Filter = "苏影枢配置包|*.syconfig",
+            DefaultExt = ".syconfig",
+            AddExtension = true,
+            FileName = suggestedFileName,
+            OverwritePrompt = true
+        };
+        return Task.FromResult(dialog.ShowDialog() == true
+            ? dialog.FileName
             : null);
     }
 }

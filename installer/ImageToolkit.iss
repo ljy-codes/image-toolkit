@@ -1,5 +1,5 @@
 #ifndef MyAppVersion
-  #define MyAppVersion "1.0.0"
+  #define MyAppVersion "1.1.0"
 #endif
 #ifndef PublishDir
   #define PublishDir "..\artifacts\publish\win-x64"
@@ -11,7 +11,7 @@
   #define SourceRoot ".."
 #endif
 
-#define MyAppName "图批处理"
+#define MyAppName "苏影枢"
 #define MyAppPublisher "ljy-codes"
 #define MyAppExeName "ImageToolkit.App.exe"
 
@@ -27,7 +27,9 @@ OutputDir={#InstallerOutput}
 OutputBaseFilename=ImageToolkitSetup
 Compression=lzma2
 SolidCompression=yes
-WizardStyle=modern
+; Inno Setup 6.7+ built-in dark style covers Setup and Uninstall controls.
+WizardStyle=modern dark polar includetitlebar
+WizardBackColor=#141D26
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -37,6 +39,7 @@ VersionInfoVersion={#MyAppVersion}
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription={#MyAppName} 安装程序
 VersionInfoProductName={#MyAppName}
+SetupIconFile={#SourceRoot}\src\ImageToolkit.App\Assets\ImageToolkit.ico
 #ifdef SignToolCommand
 SignTool={#SignToolCommand}
 SignedUninstaller=yes

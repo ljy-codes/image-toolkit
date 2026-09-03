@@ -53,8 +53,20 @@ public sealed class UserImageSmokeTests : IDisposable
                     ImageProcessingStatus.Completed,
                     ImageProcessingStatus.Unmet
                 });
-            Assert.NotNull(result.OutputPath);
-            Assert.True(File.Exists(result.OutputPath));
+            if (result.Status == ImageProcessingStatus.Completed)
+            {
+                Assert.NotNull(result.OutputPath);
+                Assert.True(File.Exists(result.OutputPath));
+                Assert.True(
+                    new FileInfo(result.OutputPath).Length <=
+                    ProcessingRequest.Default.Compression.TargetBytes);
+            }
+            else
+            {
+                Assert.Null(result.OutputPath);
+                Assert.Contains("未生成输出文件", result.Message);
+            }
+
             Assert.Equal(sourceHash, ComputeHash(source));
         }
     }

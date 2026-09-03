@@ -1,6 +1,7 @@
 using ImageMagick;
 using ImageToolkit.Application.Processing;
 using ImageToolkit.Domain.Enums;
+using ImageToolkit.Domain.Interfaces;
 using ImageToolkit.Domain.Models;
 using ImageToolkit.Infrastructure.Files;
 using ImageToolkit.Infrastructure.Imaging;
@@ -110,10 +111,122 @@ public sealed class MagickImageProcessorTests : IDisposable
             request,
             CancellationToken.None);
 
-        using var image = new MagickImage(output);
         Assert.Equal(ImageProcessingStatus.Unmet, result.Status);
-        Assert.Equal(400u, image.Width);
-        Assert.Equal(300u, image.Height);
+        Assert.Equal(new PixelSize(400, 300), result.FinalSize);
+        Assert.False(File.Exists(output));
+    }
+
+    [Fact]
+    public async Task StrictTarget_does_not_keep_output_when_target_is_unmet()
+    {
+        var source = TestImages.CreateJpeg(
+            _directory,
+            fileName: "strict-source.jpg",
+            width: 800,
+            height: 600);
+        var originalBytes = await File.ReadAllBytesAsync(source);
+        var output = ReserveOutput("strict-output.jpg");
+        var request = ProcessingRequest.Default with
+        {
+            Compression = ProcessingRequest.Default.Compression with
+            {
+                TargetBytes = 1
+            }
+        };
+        var processor = CreateProcessor();
+
+        var result = await processor.ProcessAsync(
+            source,
+            output,
+            request,
+            CancellationToken.None);
+
+        Assert.Equal(ImageProcessingStatus.Unmet, result.Status);
+        Assert.Null(result.OutputPath);
+        Assert.False(File.Exists(output));
+        Assert.Equal(originalBytes, await File.ReadAllBytesAsync(source));
+        Assert.Equal(1, result.Diagnostic?.TargetBytes);
+        Assert.True(result.Diagnostic?.BestAttemptBytes > 1);
+        Assert.Contains("未生成输出文件", result.Diagnostic?.UserMessage);
+        Assert.NotEmpty(result.Diagnostic?.Suggestions ?? []);
+    }
+
+    [Fact]
+    public async Task Pipeline_archives_folder_item_when_target_is_unmet()
+    {
+        var root = Path.Combine(_directory, "图集");
+        Directory.CreateDirectory(root);
+        var source = TestImages.CreateJpeg(
+            root,
+            fileName: "strict-source.jpg",
+            width: 800,
+            height: 600);
+        var entry = ImageImportEntry.FromFolder(root, source);
+        var archiver = new RecordingFailedItemArchiver();
+        var request = ProcessingRequest.Default with
+        {
+            Compression = ProcessingRequest.Default.Compression with
+            {
+                TargetBytes = 1
+            }
+        };
+        var pipeline = new ImageProcessingPipeline(
+            new ProcessingRequestValidator(),
+            new OutputPathResolver(),
+            CreateProcessor(),
+            archiver);
+
+        var result = await pipeline.ProcessAsync(
+            entry,
+            request,
+            CancellationToken.None);
+
+        Assert.Equal(ImageProcessingStatus.Unmet, result.Status);
+        Assert.Same(entry, archiver.Entry);
+        Assert.Same(result, archiver.Result);
+    }
+
+    [Fact]
+    public async Task Missing_ai_model_returns_clear_stage_and_does_not_write_output()
+    {
+        var source = TestImages.CreateJpeg(
+            _directory,
+            fileName: "ai-source.jpg",
+            width: 640,
+            height: 480);
+        var request = ProcessingRequest.Default with
+        {
+            AiBackgroundRemoval = ProcessingRequest.Default.AiBackgroundRemoval with
+            {
+                Mode = BackgroundRemovalMode.Portrait
+            },
+            Output = ProcessingRequest.Default.Output with
+            {
+                Format = OutputImageFormat.Png
+            }
+        };
+        var processor = new MagickImageProcessor(
+            new AtomicFileWriter(),
+            new MissingModelEngine());
+        var pipeline = new ImageProcessingPipeline(
+            new ProcessingRequestValidator(),
+            new OutputPathResolver(),
+            processor);
+
+        var result = await pipeline.ProcessAsync(
+            source,
+            request,
+            CancellationToken.None);
+
+        Assert.Equal(ImageProcessingStatus.Failed, result.Status);
+        Assert.Equal("ai.model-missing", result.ErrorCode);
+        Assert.Equal("AI 模型", result.Diagnostic?.Stage);
+        Assert.Contains("尚未安装", result.Diagnostic?.UserMessage);
+        Assert.Contains("原图保持不变", result.Diagnostic?.UserMessage);
+        Assert.Null(result.OutputPath);
+        Assert.NotEmpty(result.Diagnostic?.Suggestions ?? []);
+        Assert.True(File.Exists(source));
+        Assert.False(File.Exists(Path.Combine(_directory, "ai-source-已处理.png")));
     }
 
     [Fact]
@@ -238,5 +351,32 @@ public sealed class MagickImageProcessorTests : IDisposable
         }
 
         return path;
+    }
+
+    private sealed class RecordingFailedItemArchiver : IFailedItemArchiver
+    {
+        public ImageImportEntry? Entry { get; private set; }
+
+        public ImageProcessingResult? Result { get; private set; }
+
+        public Task ArchiveAsync(
+            ImageImportEntry entry,
+            ImageProcessingResult result,
+            CancellationToken cancellationToken)
+        {
+            Entry = entry;
+            Result = result;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class MissingModelEngine : IBackgroundRemovalEngine
+    {
+        public Task RemoveBackgroundAsync(
+            Stream input,
+            Stream output,
+            BackgroundRemovalMode mode,
+            CancellationToken cancellationToken) =>
+            throw new FileNotFoundException("尚未安装“人像抠图模型”。");
     }
 }

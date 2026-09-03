@@ -24,7 +24,8 @@ public sealed class ImageFileDiscovery : IImageFileDiscovery
     {
         ArgumentNullException.ThrowIfNull(inputPaths);
 
-        var files = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var entries = new Dictionary<string, ImageImportEntry>(
+            StringComparer.OrdinalIgnoreCase);
         var rejected = new List<RejectedPath>();
 
         foreach (var rawPath in inputPaths)
@@ -38,14 +39,17 @@ public sealed class ImageFileDiscovery : IImageFileDiscovery
             var path = Path.GetFullPath(rawPath);
             if (File.Exists(path))
             {
-                AddFile(path, files, rejected);
+                AddFile(
+                    ImageImportEntry.FromFile(path),
+                    entries,
+                    rejected);
             }
             else if (Directory.Exists(path))
             {
                 DiscoverDirectory(
                     path,
                     includeSubdirectories,
-                    files,
+                    entries,
                     rejected,
                     cancellationToken);
             }
@@ -56,14 +60,17 @@ public sealed class ImageFileDiscovery : IImageFileDiscovery
         }
 
         return Task.FromResult(new ImageImportResult(
-            files.OrderBy(path => path, StringComparer.OrdinalIgnoreCase).ToArray(),
-            rejected));
+            entries.Keys.OrderBy(path => path, StringComparer.OrdinalIgnoreCase).ToArray(),
+            rejected,
+            entries.Values
+                .OrderBy(entry => entry.SourcePath, StringComparer.OrdinalIgnoreCase)
+                .ToArray()));
     }
 
     private static void DiscoverDirectory(
         string root,
         bool includeSubdirectories,
-        ISet<string> files,
+        IDictionary<string, ImageImportEntry> entries,
         ICollection<RejectedPath> rejected,
         CancellationToken cancellationToken)
     {
@@ -78,7 +85,10 @@ public sealed class ImageFileDiscovery : IImageFileDiscovery
             {
                 foreach (var file in Directory.EnumerateFiles(directory))
                 {
-                    AddFile(file, files, rejected);
+                    AddFile(
+                        ImageImportEntry.FromFolder(root, file),
+                        entries,
+                        rejected);
                 }
 
                 if (!includeSubdirectories)
@@ -100,17 +110,17 @@ public sealed class ImageFileDiscovery : IImageFileDiscovery
     }
 
     private static void AddFile(
-        string path,
-        ISet<string> files,
+        ImageImportEntry entry,
+        IDictionary<string, ImageImportEntry> entries,
         ICollection<RejectedPath> rejected)
     {
-        var extension = Path.GetExtension(path);
+        var extension = Path.GetExtension(entry.SourcePath);
         if (!SupportedExtensions.Contains(extension))
         {
-            rejected.Add(new RejectedPath(path, "不支持该文件格式。"));
+            rejected.Add(new RejectedPath(entry.SourcePath, "不支持该文件格式。"));
             return;
         }
 
-        files.Add(Path.GetFullPath(path));
+        entries.TryAdd(entry.SourcePath, entry);
     }
 }

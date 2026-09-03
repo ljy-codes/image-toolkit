@@ -6,6 +6,7 @@ public sealed record ProcessingRequest(
     CompressionOptions Compression,
     ResizeOptions Resize,
     AspectRatioOptions AspectRatio,
+    AiBackgroundRemovalOptions AiBackgroundRemoval,
     BackgroundOptions Background,
     MetadataOptions Metadata,
     OutputOptions Output)
@@ -14,6 +15,7 @@ public sealed record ProcessingRequest(
         CompressionOptions.Default,
         ResizeOptions.Default,
         AspectRatioOptions.Default,
+        AiBackgroundRemovalOptions.Default,
         BackgroundOptions.Default,
         MetadataOptions.Default,
         OutputOptions.Default);

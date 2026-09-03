@@ -1,4 +1,5 @@
 using ImageToolkit.Infrastructure.Files;
+using ImageToolkit.Domain.Enums;
 
 namespace ImageToolkit.Infrastructure.Tests;
 
@@ -23,6 +24,10 @@ public sealed class ImageFileDiscoveryTests : IDisposable
             CancellationToken.None);
 
         Assert.Equal([Path.GetFullPath(image)], result.Files);
+        var entry = Assert.Single(result.Entries);
+        Assert.Equal(ImportSourceKind.Folder, entry.SourceKind);
+        Assert.Equal(Path.GetFullPath(_directory), entry.SourceRoot);
+        Assert.Equal("one.jpg", entry.RelativePath);
         Assert.Contains(
             result.Rejected,
             item => item.Path == Path.GetFullPath(unsupported));

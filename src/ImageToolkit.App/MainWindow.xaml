@@ -43,7 +43,7 @@
                     <TextBlock
                         FontSize="20"
                         FontWeight="SemiBold"
-                        Text="图批处理"
+                        Text="苏影枢"
                         TextWrapping="Wrap" />
                     <TextBlock
                         Margin="0,5,0,0"
@@ -92,6 +92,7 @@
                     <ColumnDefinition Width="16" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
@@ -118,8 +119,13 @@
                     Command="{Binding ClearQueueCommand}"
                     Content="&#xE894;"
                     ToolTip="清空队列" />
+                <Button
+                    Grid.Column="5"
+                    Margin="8,0,0,0"
+                    Command="{Binding StartNextBatchCommand}"
+                    Content="开启下一批" />
                 <CheckBox
-                    Grid.Column="6"
+                    Grid.Column="7"
                     IsChecked="{Binding IncludeSubdirectories}"
                     Content="包含子文件夹" />
             </Grid>
@@ -219,12 +225,12 @@
                             <GridViewColumn Width="120" Header="尺寸" DisplayMemberBinding="{Binding Dimensions}" />
                             <GridViewColumn Width="90" Header="大小" DisplayMemberBinding="{Binding SizeText}" />
                             <GridViewColumn Width="90" Header="状态" DisplayMemberBinding="{Binding Status}" />
-                            <GridViewColumn Width="190" Header="处理结果">
+                            <GridViewColumn Width="340" Header="处理结果 / 原因">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
                                         <TextBlock
                                             Text="{Binding ResultDetails, TargetNullValue=—}"
-                                            TextTrimming="CharacterEllipsis"
+                                            TextWrapping="Wrap"
                                             ToolTip="{Binding Message}" />
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
@@ -258,8 +264,80 @@
                 <StackPanel>
                     <TextBlock Style="{StaticResource SectionHeader}" Text="{DynamicResource SettingsText}" />
 
+                    <Expander Header="参数方案" IsExpanded="True">
+                        <StackPanel Margin="0,10,0,0">
+                            <TextBlock
+                                Margin="0,0,0,7"
+                                Style="{StaticResource SecondaryText}"
+                                Text="保存常用处理参数，下次可直接选择复用。"
+                                TextWrapping="Wrap" />
+                            <ComboBox
+                                DisplayMemberPath="Name"
+                                ItemsSource="{Binding Presets.Items}"
+                                SelectedItem="{Binding Presets.SelectedPreset}" />
+                            <Grid Margin="0,8,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="6" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="6" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="6" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Button Command="{Binding Presets.ApplySelectedCommand}" Content="应用" />
+                                <Button Grid.Column="2" Command="{Binding Presets.UpdateSelectedCommand}" Content="更新" />
+                                <Button Grid.Column="4" Command="{Binding Presets.RenameSelectedCommand}" Content="重命名" />
+                                <Button Grid.Column="6" Command="{Binding Presets.DeleteSelectedCommand}" Content="删除" />
+                            </Grid>
+                            <TextBox
+                                Margin="0,8,0,0"
+                                Text="{Binding Presets.PresetName, UpdateSourceTrigger=PropertyChanged}"
+                                ToolTip="输入新方案名称，或输入新名称后重命名当前方案" />
+                            <Button
+                                Margin="0,8,0,0"
+                                Command="{Binding Presets.SaveAsCommand}"
+                                Content="另存为新方案" />
+                            <Button
+                                Margin="0,8,0,0"
+                                Command="{Binding Settings.ResetToDefaultsCommand}"
+                                Content="恢复默认参数" />
+                            <Grid Margin="0,8,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Button
+                                    Command="{Binding ImportConfigurationCommand}"
+                                    Content="导入配置"
+                                    ToolTip="从 .syconfig 文件恢复当前参数、外观和全部命名方案" />
+                                <Button
+                                    Grid.Column="2"
+                                    Command="{Binding ExportConfigurationCommand}"
+                                    Content="导出配置"
+                                    ToolTip="将当前参数、外观和全部命名方案保存为 .syconfig 文件" />
+                            </Grid>
+                            <TextBlock
+                                Margin="0,7,0,0"
+                                Style="{StaticResource SecondaryText}"
+                                Text="{Binding ConfigurationNotice}"
+                                TextWrapping="Wrap" />
+                            <TextBlock
+                                Margin="0,7,0,0"
+                                Foreground="{DynamicResource WarningBrush}"
+                                Text="{Binding Presets.Notice}"
+                                TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Expander>
+
                     <Expander Header="压缩" IsExpanded="True">
                         <StackPanel Margin="0,10,0,0">
+                            <TextBlock
+                                Margin="0,0,0,7"
+                                Style="{StaticResource SecondaryText}"
+                                Text="压缩：限制输出文件体积。无法达到目标时判为未处理，不保留超标文件。"
+                                TextWrapping="Wrap" />
                             <CheckBox IsChecked="{Binding Settings.CompressionEnabled}" Content="限制文件大小" />
                             <TextBlock Margin="0,10,0,5" Style="{StaticResource FieldLabel}" Text="目标大小（MB）" />
                             <TextBox Text="{Binding Settings.TargetMegabytes, UpdateSourceTrigger=PropertyChanged}" />
@@ -272,23 +350,35 @@
 
                     <Expander Header="尺寸与比例" IsExpanded="True">
                         <StackPanel Margin="0,10,0,0">
+                            <TextBlock
+                                Margin="0,0,0,7"
+                                Style="{StaticResource SecondaryText}"
+                                Text="尺寸：默认保留原尺寸；启用后才需要填写宽度或高度。"
+                                TextWrapping="Wrap" />
                             <CheckBox IsChecked="{Binding Settings.ResizeEnabled}" Content="调整图片尺寸" />
+                            <TextBlock
+                                Margin="0,3,0,0"
+                                Style="{StaticResource SecondaryText}"
+                                Text="未启用：保留原尺寸" />
                             <Grid Margin="0,8,0,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="10" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
-                                <StackPanel>
-                                    <TextBlock Style="{StaticResource FieldLabel}" Text="宽度" />
+                                <StackPanel IsEnabled="{Binding Settings.ResizeEnabled}">
+                                    <TextBlock Style="{StaticResource FieldLabel}" Text="宽度（可选）" />
                                     <TextBox Text="{Binding Settings.Width, UpdateSourceTrigger=PropertyChanged, TargetNullValue=''}" />
                                 </StackPanel>
-                                <StackPanel Grid.Column="2">
-                                    <TextBlock Style="{StaticResource FieldLabel}" Text="高度" />
+                                <StackPanel Grid.Column="2" IsEnabled="{Binding Settings.ResizeEnabled}">
+                                    <TextBlock Style="{StaticResource FieldLabel}" Text="高度（可选）" />
                                     <TextBox Text="{Binding Settings.Height, UpdateSourceTrigger=PropertyChanged, TargetNullValue=''}" />
                                 </StackPanel>
                             </Grid>
-                            <CheckBox IsChecked="{Binding Settings.LockAspectRatio}" Content="锁定原始比例" />
+                            <CheckBox
+                                IsChecked="{Binding Settings.LockAspectRatio}"
+                                IsEnabled="{Binding Settings.ResizeEnabled}"
+                                Content="锁定原始比例" />
                             <TextBlock Margin="0,10,0,5" Style="{StaticResource FieldLabel}" Text="画面比例" />
                             <ComboBox
                                 DisplayMemberPath="Label"
@@ -314,8 +404,72 @@
                         </StackPanel>
                     </Expander>
 
+                    <Expander Header="AI 抠图" IsExpanded="True">
+                        <StackPanel Margin="0,10,0,0">
+                            <TextBlock
+                                Margin="0,0,0,7"
+                                Style="{StaticResource SecondaryText}"
+                                Text="AI 抠图：在本机识别主体并生成透明背景。模型按需下载，图片不会上传。"
+                                TextWrapping="Wrap" />
+                            <ComboBox
+                                DisplayMemberPath="Label"
+                                ItemsSource="{Binding Settings.BackgroundRemovalModes}"
+                                SelectedValue="{Binding Settings.BackgroundRemovalMode}"
+                                SelectedValuePath="Value" />
+                            <TextBlock Margin="0,10,0,4" FontWeight="SemiBold" Text="人像模型" />
+                            <TextBlock
+                                Style="{StaticResource SecondaryText}"
+                                Text="{Binding AiBackgroundRemoval.PortraitStatus}" />
+                            <Grid Margin="0,7,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Button
+                                    Command="{Binding AiBackgroundRemoval.InstallPortraitCommand}"
+                                    Content="安装 / 重装" />
+                                <Button
+                                    Grid.Column="2"
+                                    Command="{Binding AiBackgroundRemoval.RemovePortraitCommand}"
+                                    Content="删除" />
+                            </Grid>
+                            <TextBlock Margin="0,12,0,4" FontWeight="SemiBold" Text="商品 / 通用物体模型" />
+                            <TextBlock
+                                Style="{StaticResource SecondaryText}"
+                                Text="{Binding AiBackgroundRemoval.GeneralStatus}" />
+                            <Grid Margin="0,7,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Button
+                                    Command="{Binding AiBackgroundRemoval.InstallGeneralCommand}"
+                                    Content="安装 / 重装" />
+                                <Button
+                                    Grid.Column="2"
+                                    Command="{Binding AiBackgroundRemoval.RemoveGeneralCommand}"
+                                    Content="删除" />
+                            </Grid>
+                            <ProgressBar
+                                Margin="0,10,0,0"
+                                Value="{Binding AiBackgroundRemoval.DownloadProgress}" />
+                            <TextBlock
+                                Margin="0,7,0,0"
+                                Foreground="{DynamicResource WarningBrush}"
+                                Text="{Binding AiBackgroundRemoval.Notice}"
+                                TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Expander>
+
                     <Expander Header="背景" IsExpanded="False">
                         <StackPanel Margin="0,10,0,0">
+                            <TextBlock
+                                Margin="0,0,0,7"
+                                Style="{StaticResource SecondaryText}"
+                                Text="背景：保留、填充颜色或输出透明背景；AI 抠图模型可按需安装。"
+                                TextWrapping="Wrap" />
                             <ComboBox
                                 DisplayMemberPath="Label"
                                 ItemsSource="{Binding Settings.BackgroundModes}"
@@ -333,6 +487,11 @@
 
                     <Expander Header="元数据" IsExpanded="False">
                         <StackPanel Margin="0,10,0,0">
+                            <TextBlock
+                                Margin="0,0,0,7"
+                                Style="{StaticResource SecondaryText}"
+                                Text="元数据：控制 EXIF、定位信息和色彩配置是否写入新图。"
+                                TextWrapping="Wrap" />
                             <CheckBox IsChecked="{Binding Settings.PreserveExif}" Content="保留 EXIF" />
                             <CheckBox IsChecked="{Binding Settings.PreserveGps}" Content="保留 GPS 信息" />
                             <CheckBox IsChecked="{Binding Settings.PreserveIccProfile}" Content="保留 ICC 色彩配置" />
@@ -341,6 +500,11 @@
 
                     <Expander Header="输出" IsExpanded="True">
                         <StackPanel Margin="0,10,0,0">
+                            <TextBlock
+                                Margin="0,0,0,7"
+                                Style="{StaticResource SecondaryText}"
+                                Text="输出：选择格式和保存规则。默认生成新文件，不覆盖原图。"
+                                TextWrapping="Wrap" />
                             <TextBlock Style="{StaticResource FieldLabel}" Text="输出格式" />
                             <ComboBox
                                 DisplayMemberPath="Label"
@@ -415,6 +579,7 @@
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <StackPanel Margin="0,0,18,0" VerticalAlignment="Center">
                     <Grid>
@@ -444,6 +609,11 @@
                     Content="重试失败项" />
                 <Button
                     Grid.Column="4"
+                    Margin="0,0,8,0"
+                    Command="{Binding StartNextBatchCommand}"
+                    Content="开启下一批" />
+                <Button
+                    Grid.Column="5"
                     Style="{StaticResource PrimaryButton}"
                     Command="{Binding StartCommand}"
                     Content="{DynamicResource StartText}" />

@@ -42,10 +42,16 @@ public sealed class BatchTaskCoordinatorTests
         var coordinator = new BatchTaskCoordinator((item, _, _) =>
             Task.FromResult(ImageProcessingResult.Unmet(
                 item.SourcePath,
-                item.SourcePath + ".out",
                 500,
                 new PixelSize(100, 100),
-                "未达到目标大小。")));
+                "未达到目标大小。",
+                new ProcessingDiagnostic(
+                    "compression",
+                    "未达到目标大小。",
+                    null,
+                    100,
+                    500,
+                    ["提高目标大小。"]))));
 
         var summary = await coordinator.RunAsync(
             [BatchItem.Waiting("image.png")],

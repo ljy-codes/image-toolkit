@@ -19,6 +19,7 @@ if (-not (Test-Path -LiteralPath $dotnet)) {
 & $dotnet restore $solution `
     -m:1 `
     -p:UseSharedCompilation=false `
+    -p:NuGetAudit=false `
     -p:RestoreIgnoreFailedSources=false
 if ($LASTEXITCODE -ne 0) {
     throw "dotnet restore failed with exit code $LASTEXITCODE."
@@ -28,7 +29,8 @@ if ($LASTEXITCODE -ne 0) {
     -c $Configuration `
     --no-restore `
     -m:1 `
-    -p:UseSharedCompilation=false
+    -p:UseSharedCompilation=false `
+    -p:NuGetAudit=false
 if ($LASTEXITCODE -ne 0) {
     throw "dotnet build failed with exit code $LASTEXITCODE."
 }

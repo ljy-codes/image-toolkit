@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.IO;
+using System.Net.Http;
 using System.Windows;
 using ImageToolkit.App.Services;
 using ImageToolkit.App.ViewModels;
@@ -10,6 +11,7 @@ using ImageToolkit.Domain.Interfaces;
 using ImageToolkit.Infrastructure.Config;
 using ImageToolkit.Infrastructure.Files;
 using ImageToolkit.Infrastructure.Imaging;
+using ImageToolkit.Infrastructure.AI;
 using ImageToolkit.Infrastructure.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -43,13 +45,16 @@ public partial class App : System.Windows.Application
             _logger = _loggerProvider.CreateLogger("ImageToolkit.App");
 
             var registrations = new ServiceCollection();
-            RegisterServices(registrations, _configurationStore);
+            RegisterServices(registrations, _configurationStore, dataDirectory);
             _services = registrations.BuildServiceProvider();
 
             var configuration = await _configurationStore.LoadAsync(
                 CancellationToken.None);
             _mainViewModel = _services.GetRequiredService<MainWindowViewModel>();
-            ApplyConfiguration(_mainViewModel, configuration);
+            _mainViewModel.ApplyConfiguration(configuration);
+            await _mainViewModel.Presets.InitializeAsync(CancellationToken.None);
+            await _mainViewModel.AiBackgroundRemoval.InitializeAsync(
+                CancellationToken.None);
             SubscribeConfigurationChanges(_mainViewModel);
             _configurationReady = true;
 
@@ -60,10 +65,13 @@ public partial class App : System.Windows.Application
         }
         catch (Exception exception)
         {
-            _logger?.LogCritical(exception, "应用启动失败。");
+            _logger?.LogCritical(
+                exception,
+                "应用启动失败：{ExceptionDetails}",
+                exception.ToString());
             MessageBox.Show(
                 $"应用启动失败：{exception.Message}",
-                "图批处理",
+                "苏影枢",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
             Shutdown(-1);
@@ -82,7 +90,7 @@ public partial class App : System.Windows.Application
             try
             {
                 _configurationStore.SaveAsync(
-                    CreateConfiguration(_mainViewModel),
+                    _mainViewModel.BuildConfiguration(),
                     CancellationToken.None).GetAwaiter().GetResult();
             }
             catch (Exception exception)
@@ -99,11 +107,25 @@ public partial class App : System.Windows.Application
 
     private static void RegisterServices(
         IServiceCollection services,
-        IConfigurationStore<AppConfiguration> configurationStore)
+        IConfigurationStore<AppConfiguration> configurationStore,
+        string dataDirectory)
     {
         services.AddSingleton(configurationStore);
+        services.AddSingleton<IProcessingPresetStore>(_ =>
+            new JsonProcessingPresetStore(Path.Combine(dataDirectory, "presets.json")));
+        services.AddSingleton<IConfigurationPackageService, JsonConfigurationPackageService>();
         services.AddSingleton<IAtomicFileWriter, AtomicFileWriter>();
+        services.AddSingleton(new HttpClient
+        {
+            Timeout = TimeSpan.FromMinutes(20)
+        });
+        services.AddSingleton<IAiModelManager>(provider =>
+            new LocalAiModelManager(
+                provider.GetRequiredService<HttpClient>(),
+                Path.Combine(dataDirectory, "models")));
+        services.AddSingleton<IBackgroundRemovalEngine, OnnxBackgroundRemovalEngine>();
         services.AddSingleton<IOutputPathResolver, OutputPathResolver>();
+        services.AddSingleton<IFailedItemArchiver, FailedItemArchiver>();
         services.AddSingleton<IImageFileDiscovery, ImageFileDiscovery>();
         services.AddSingleton<IImageMetadataReader, MagickImageMetadataReader>();
         services.AddSingleton<IImagePreviewRenderer, MagickPreviewRenderer>();
@@ -116,25 +138,14 @@ public partial class App : System.Windows.Application
         services.AddSingleton<IUserDialogService, UserDialogService>();
         services.AddSingleton<IThemeService, ThemeService>();
         services.AddSingleton<ProcessingSettingsViewModel>();
+        services.AddSingleton<ProcessingPresetViewModel>();
+        services.AddSingleton<AiBackgroundRemovalViewModel>();
         services.AddSingleton<AppearanceSettingsViewModel>();
         services.AddSingleton<PreviewViewModel>();
         services.AddSingleton<FileQueueViewModel>();
         services.AddSingleton<BatchProgressViewModel>();
         services.AddSingleton<MainWindowViewModel>();
         services.AddSingleton<MainWindow>();
-    }
-
-    private static void ApplyConfiguration(
-        MainWindowViewModel viewModel,
-        AppConfiguration configuration)
-    {
-        viewModel.Settings.Apply(configuration.Processing);
-        viewModel.Appearance.Apply(
-            configuration.Theme,
-            configuration.WorkspaceBackground,
-            configuration.CustomWorkspaceColor,
-            configuration.FontSize);
-        viewModel.IncludeSubdirectories = configuration.IncludeSubdirectories;
     }
 
     private void SubscribeConfigurationChanges(MainWindowViewModel viewModel)
@@ -181,7 +192,7 @@ public partial class App : System.Windows.Application
             if (_configurationStore is not null && _mainViewModel is not null)
             {
                 await _configurationStore.SaveAsync(
-                    CreateConfiguration(_mainViewModel),
+                    _mainViewModel.BuildConfiguration(),
                     cancellationToken);
             }
         }
@@ -194,14 +205,4 @@ public partial class App : System.Windows.Application
         }
     }
 
-    private static AppConfiguration CreateConfiguration(
-        MainWindowViewModel viewModel) =>
-        new(
-            viewModel.Settings.BuildRequest(),
-            0,
-            viewModel.Appearance.Theme,
-            viewModel.IncludeSubdirectories,
-            viewModel.Appearance.WorkspaceBackground,
-            viewModel.Appearance.CustomWorkspaceColor,
-            viewModel.Appearance.FontSize);
 }

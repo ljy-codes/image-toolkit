@@ -12,7 +12,8 @@ public sealed record ImageProcessingResult(
     bool UsedAutomaticResize,
     bool UsedPngQuantization,
     string? ErrorCode,
-    string? Message)
+    string? Message,
+    ProcessingDiagnostic? Diagnostic = null)
 {
     public static ImageProcessingResult Completed(
         string sourcePath,
@@ -36,27 +37,47 @@ public sealed record ImageProcessingResult(
 
     public static ImageProcessingResult Unmet(
         string sourcePath,
-        string? outputPath,
         long outputSizeBytes,
         PixelSize? finalSize,
         string reason,
-        int? quality = null) =>
+        ProcessingDiagnostic diagnostic,
+        int? quality = null,
+        bool usedAutomaticResize = false,
+        bool usedPngQuantization = false) =>
         new(
             sourcePath,
-            outputPath,
+            null,
             ImageProcessingStatus.Unmet,
             outputSizeBytes,
             finalSize,
             quality,
-            false,
-            false,
+            usedAutomaticResize,
+            usedPngQuantization,
             "compression.target-unmet",
-            reason);
+            reason,
+            diagnostic);
 
     public static ImageProcessingResult Failed(
         string sourcePath,
         string errorCode,
         string message) =>
+        Failed(
+            sourcePath,
+            errorCode,
+            message,
+            new ProcessingDiagnostic(
+                "处理",
+                message,
+                null,
+                null,
+                null,
+                []));
+
+    public static ImageProcessingResult Failed(
+        string sourcePath,
+        string errorCode,
+        string message,
+        ProcessingDiagnostic diagnostic) =>
         new(
             sourcePath,
             null,
@@ -67,7 +88,8 @@ public sealed record ImageProcessingResult(
             false,
             false,
             errorCode,
-            message);
+            message,
+            diagnostic);
 
     public static ImageProcessingResult Cancelled(string sourcePath) =>
         new(
@@ -80,5 +102,12 @@ public sealed record ImageProcessingResult(
             false,
             false,
             "operation.cancelled",
-            "处理已取消。");
+            "处理已取消。",
+            new ProcessingDiagnostic(
+                "operation",
+                "处理已取消。",
+                null,
+                null,
+                null,
+                []));
 }

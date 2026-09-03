@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using ImageToolkit.Domain.Models;
 
 namespace ImageToolkit.App.Models;
 
@@ -8,12 +9,14 @@ public sealed partial class ImageQueueItemViewData : ObservableObject
         string sourcePath,
         string fileName,
         string dimensions,
-        string sizeText)
+        string sizeText,
+        ImageImportEntry? importEntry = null)
     {
         SourcePath = sourcePath;
         FileName = fileName;
         Dimensions = dimensions;
         SizeText = sizeText;
+        ImportEntry = importEntry ?? ImageImportEntry.FromFile(sourcePath);
     }
 
     public string SourcePath { get; }
@@ -23,6 +26,8 @@ public sealed partial class ImageQueueItemViewData : ObservableObject
     public string Dimensions { get; }
 
     public string SizeText { get; }
+
+    public ImageImportEntry ImportEntry { get; }
 
     [ObservableProperty]
     private string _status = "等待";

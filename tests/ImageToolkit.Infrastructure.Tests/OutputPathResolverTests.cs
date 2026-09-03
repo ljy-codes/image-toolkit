@@ -1,4 +1,5 @@
 using ImageToolkit.Domain.Enums;
+using ImageToolkit.Domain.Models;
 using ImageToolkit.Domain.Options;
 using ImageToolkit.Infrastructure.Files;
 
@@ -31,6 +32,27 @@ public sealed class OutputPathResolverTests : IDisposable
         var result = new OutputPathResolver().Resolve(source, OutputOptions.Default, ".jpg");
 
         Assert.Equal(Path.Combine(_directory, "photo-已处理-2.jpg"), result);
+    }
+
+    [Fact]
+    public void Folder_source_uses_processed_sibling_and_preserves_relative_path()
+    {
+        var sourceRoot = Path.Combine(_directory, "图集");
+        var childDirectory = Path.Combine(sourceRoot, "子目录");
+        Directory.CreateDirectory(childDirectory);
+        var source = Path.Combine(childDirectory, "photo.png");
+        File.WriteAllBytes(source, [1]);
+        var entry = ImageImportEntry.FromFolder(sourceRoot, source);
+
+        var result = new OutputPathResolver().Resolve(
+            entry,
+            OutputOptions.Default,
+            ".png");
+
+        Assert.Equal(
+            Path.Combine(_directory, "图集-已处理", "子目录", "photo.png"),
+            result);
+        Assert.True(File.Exists(result));
     }
 
     [Theory]

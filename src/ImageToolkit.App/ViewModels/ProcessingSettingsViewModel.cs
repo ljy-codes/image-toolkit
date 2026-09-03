@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using ImageToolkit.App.Models;
 using ImageToolkit.Domain.Enums;
 using ImageToolkit.Domain.Models;
@@ -48,6 +49,14 @@ public sealed partial class ProcessingSettingsViewModel : ObservableObject
         new(BackgroundMode.Custom, "自定义颜色")
     ];
 
+    public IReadOnlyList<ChoiceOption<BackgroundRemovalMode>> BackgroundRemovalModes { get; } =
+    [
+        new(BackgroundRemovalMode.Disabled, "关闭"),
+        new(BackgroundRemovalMode.Automatic, "自动（通用模型）"),
+        new(BackgroundRemovalMode.Portrait, "人像"),
+        new(BackgroundRemovalMode.GeneralObject, "商品 / 普通物体")
+    ];
+
     [ObservableProperty]
     private bool _compressionEnabled = true;
 
@@ -77,6 +86,10 @@ public sealed partial class ProcessingSettingsViewModel : ObservableObject
 
     [ObservableProperty]
     private CropAnchor _cropAnchor = CropAnchor.Center;
+
+    [ObservableProperty]
+    private BackgroundRemovalMode _backgroundRemovalMode =
+        BackgroundRemovalMode.Disabled;
 
     [ObservableProperty]
     private BackgroundMode _backgroundMode = BackgroundMode.Preserve;
@@ -121,6 +134,9 @@ public sealed partial class ProcessingSettingsViewModel : ObservableObject
         RatioWidth = request.AspectRatio.RatioWidth;
         RatioHeight = request.AspectRatio.RatioHeight;
         CropAnchor = request.AspectRatio.CropAnchor;
+        BackgroundRemovalMode =
+            request.AiBackgroundRemoval?.Mode ??
+            Domain.Enums.BackgroundRemovalMode.Disabled;
         BackgroundMode = request.Background.Mode;
         CustomBackgroundColor = request.Background.CustomColor;
         PreserveExif = request.Metadata.PreserveExif;
@@ -158,6 +174,10 @@ public sealed partial class ProcessingSettingsViewModel : ObservableObject
                 RatioHeight = RatioHeight,
                 CropAnchor = CropAnchor
             },
+            AiBackgroundRemoval = defaults.AiBackgroundRemoval with
+            {
+                Mode = BackgroundRemovalMode
+            },
             Background = defaults.Background with
             {
                 Mode = BackgroundMode,
@@ -178,7 +198,13 @@ public sealed partial class ProcessingSettingsViewModel : ObservableObject
         };
     }
 
+    [RelayCommand]
+    public void ResetToDefaults() => Apply(ProcessingRequest.Default);
+
     partial void OnBackgroundModeChanged(BackgroundMode value) =>
+        EnsureTransparentOutputCompatibility();
+
+    partial void OnBackgroundRemovalModeChanged(BackgroundRemovalMode value) =>
         EnsureTransparentOutputCompatibility();
 
     partial void OnOutputFormatChanged(OutputImageFormat value) =>
@@ -189,6 +215,23 @@ public sealed partial class ProcessingSettingsViewModel : ObservableObject
 
     private void EnsureTransparentOutputCompatibility()
     {
+        if (BackgroundRemovalMode != Domain.Enums.BackgroundRemovalMode.Disabled)
+        {
+            if (OutputMode == OutputMode.OverwriteOriginal)
+            {
+                OutputMode = OutputMode.SourceDirectory;
+            }
+
+            if (OutputFormat is OutputImageFormat.Original or OutputImageFormat.Jpeg)
+            {
+                OutputFormat = OutputImageFormat.Png;
+            }
+
+            BackgroundMode = Domain.Enums.BackgroundMode.Transparent;
+            Notice = "AI 抠图需要透明输出，已切换为 PNG 新文件。";
+            return;
+        }
+
         if (OutputMode == OutputMode.OverwriteOriginal &&
             BackgroundMode == Domain.Enums.BackgroundMode.Transparent)
         {

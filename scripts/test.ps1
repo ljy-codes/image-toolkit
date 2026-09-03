@@ -29,7 +29,8 @@ $arguments = @(
     '-c', $Configuration,
     '--no-build',
     '-m:1',
-    '-p:UseSharedCompilation=false'
+    '-p:UseSharedCompilation=false',
+    '-p:NuGetAudit=false'
 )
 if ($filter) {
     $arguments += @('--filter', $filter)

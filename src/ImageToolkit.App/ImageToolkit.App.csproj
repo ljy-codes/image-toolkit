@@ -5,6 +5,13 @@
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\ImageToolkit.ico</ApplicationIcon>
+    <Version>1.1.0</Version>
+    <AssemblyVersion>1.1.0.0</AssemblyVersion>
+    <FileVersion>1.1.0.0</FileVersion>
+    <Product>苏影枢</Product>
+    <Company>ljy-codes</Company>
+    <Description>Windows 本地图片批处理工具</Description>
   </PropertyGroup>
 
   <ItemGroup>
@@ -16,6 +23,7 @@
   <ItemGroup>
     <ProjectReference Include="..\ImageToolkit.Application\ImageToolkit.Application.csproj" />
     <ProjectReference Include="..\ImageToolkit.Infrastructure\ImageToolkit.Infrastructure.csproj" />
+    <ProjectReference Include="..\ImageToolkit.Infrastructure.AI\ImageToolkit.Infrastructure.AI.csproj" />
   </ItemGroup>
 
 </Project>
